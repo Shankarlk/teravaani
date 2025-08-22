@@ -1,12 +1,45 @@
 import 'package:flutter/material.dart';
 import '../api/market_price_api.dart';
 import '../models/market_price.dart';
+import 'package:flutter_tts/flutter_tts.dart';
+import 'package:google_mlkit_translation/google_mlkit_translation.dart';
+import 'package:visibility_detector/visibility_detector.dart';
+import '../api/pageapi.dart';
 
 const Map<String, List<String>> commodityCategories = {
-  'Vegetables': ['Onion', 'Potato', 'Tomato', 'Cabbage', 'Brinjal'],
-  'Fruits': ['Apple', 'Banana', 'Mango', 'Grapes'],
-  'Pulses': ['Green Gram', 'Black Gram', 'Red Gram'],
-  'Grains': ['Wheat', 'Rice', 'Maize'],
+  'Vegetables': ['Onion', 'Potato', 'Tomato', 'Cabbage', 'Brinjal','Ginger(Dry)', 'Bitter gourd','Bottle gourd','Carrot','Cucumbar(Kheera)','Ginger(Green)','Ridgeguard(Tori)','Seemebadnekai','Suvarna Gadde','Beans','Cauliflower','Green Chilli','Snakeguard','Ashgourd','Capsicum','Drumstick','Knool Khol','Sweet Pumpkin','Thondekai','Beetroot','Bhindi(Ladies Finger)','Chilly Capsicum', 
+    'Cluster beans', 'Cowpea(Veg)','Cowpea (Lobia/Karamani)', 'French Beans (Frasbean)', 'Indian Beans (Seam)',
+    'Round gourd', 'Pointed gourd (Parval)', 'Little gourd (Kundru)', 'Long Melon(Kakri)',
+    'Pumpkin', 'Raddish', 'Seemebadnekai', 'Suvarna Gadde', 'Sweet Potato', 'Tinda',
+    'Turnip', 'Sponge gourd', 'Snakeguard', 'Ashgourd', 'Colacasia', 'Chow Chow',
+    'Knool Khol', 'Amaranthus', 'Amranthas Red', 'Alsandikai', 'Bunch Beans', 'Duster Beans',
+    'Leafy Vegetable', 'Mashrooms'],
+  'Fruits': [
+    'Apple', 'Banana', 'Banana - Green', 'Mango', 'Mango (Raw-Ripe)', 'Pomegranate',
+    'Karbuja(Musk Melon)', 'Pineapple', 'Water Melon', 'Guava', 'Papaya', 'Papaya (Raw)',
+    'Chikoos(Sapota)', 'Jack Fruit', 'Custard Apple (Sharifa)', 'Amla(Nelli Kai)',
+    'Jamun(Narale Hannu)', 'Orange', 'Peach', 'Pear(Marasebu)', 'Litchi', 'Seetapal', 'Fig(Anjura/Anjeer)',
+    'Plum', 'Apricot(Jardalu/Khumani)','Lime'],
+  'Pulses': ['Arhar (Tur/Red Gram)(Whole)', 'Arhar Dal(Tur Dal)', 'Green Gram (Moong)(Whole)',
+    'Green Gram Dal (Moong Dal)', 'Black Gram (Urd Beans)(Whole)', 'Black Gram Dal (Urd Dal)',
+    'Bengal Gram(Gram)(Whole)', 'Bengal Gram Dal (Chana Dal)', 'Peas(Dry)', 'Peas Wet',
+    'Kabuli Chana(Chickpeas-White)', 'Mataki', 'Moath Dal', 'Lentil (Masur)(Whole)', 'Masur Dal',
+    'Kulthi(Horse Gram)', 'White Peas', 'Field Pea'],
+  'Grains': ['Wheat', 'Rice', 'Maize', 'Barley (Jau)', 'Jowar(Sorghum)', 'Bajra(Pearl Millet/Cumbu)',
+    'Foxtail Millet(Navane)', 'Kodo Millet(Varagu)', 'Ragi (Finger Millet)', 'Hybrid Cumbu',
+    'Millets', 'Paddy(Dhan)(Basmati)', 'Paddy(Dhan)(Common)'],
+  'Species': ['Ginger(Dry)', 'Ginger(Green)', 'Garlic', 'Turmeric', 'Turmeric (raw)',
+    'Cummin Seed(Jeera)', 'Corriander seed', 'Mint(Pudina)', 'Methi Seeds', 'Methi(Leaves)',
+    'Chili Red', 'Dry Chillies', 'Pepper garbled', 'Pepper ungarbled', 'Black pepper',
+    'Cardamoms', 'Coriander(Leaves)', 'Isabgul (Psyllium)', 'Basil', 'Ajwan',
+    'Cinnamon(Dalchini)', 'Mustard', 'nigella seeds', 'Safflower', 'Soanf', 'Suva (Dill Seed)',
+    'Taramira', 'Sesamum(Sesame,Gingelly,Til)', 'Asalia', 'Rayee', 'Kutki', 'Asgand',
+    'Ashwagandha', 'Muleti', 'Castor Seed'],
+  'Others':[ 'Tender Coconut', 'Betal Leaves', 'Rubber', 'Cotton', 'Firewood', 'Wood',
+    'Lotus', 'Lotus Sticks', 'Season Leaves', 'Dry Mango', 'Mango Powder',
+    'Raibel', 'Rajgir', 'Pegeon Pea (Arhar Fali)', 'Poppy Seeds', 'Mint(Pudina)',
+    'Mahua', 'Mahua Seed(Hippe seed)', 'Hippe Seed', 'BOP', 'buttery', 'Cock', 'gulli',
+    'Mahedi', 'Patti Calcutta', 'Thogrikai','Gur(Jaggery)','Sugar', 'Sugarcane', 'Coconut']
 };
 
 class MarketPriceScreen extends StatefulWidget {
@@ -19,96 +52,677 @@ class MarketPriceScreen extends StatefulWidget {
   _MarketPriceScreenState createState() => _MarketPriceScreenState();
 }
 
-class _MarketPriceScreenState extends State<MarketPriceScreen> {
+class _MarketPriceScreenState extends State<MarketPriceScreen> with WidgetsBindingObserver {
   final apiService = MarketPriceApiService();
   String selectedCategory = 'Vegetables';
   List<MarketPrice> filteredPrices = [];
+  List<MarketPrice> allfecthState = [];
   bool isLoading = false;
+  String selectedDistrict = '';
+  List<String> markets = [];
+  Map<String, String> translatedMarkets = {};
+  String? selectedMarket;
+  late String _currentLangCode;
+  late FlutterTts flutterTts;
+  Set<int> visibleRowIndexes = {};
+  bool _isSpeaking = false;
+  bool _isPaused = false;
+  int lastSpokenRowIndex = -1;
+  String labelCategory = "Category";
+  String labelMarket = "Market";
+  String labelCrop = "Crop";
+  String labelMin = "Min Price";
+  String labelMax = "Max Price";
+  String labelModal = "Modal Price";
+  String labelEmptyState = "No prices found";
+  String labelAppBarTitle = "Market Prices";
+  Map<String, String> translatedCommodities = {};
+  Map<String, String> translatedCategories = {};
+  List<String> translatedVisibleSentences = [];
+final Map<String, String> marketTranslations = {
+  'Chickkaballapura (Chickkaballapura)': 'Chickkaballapura (ಚಿಕ್ಕಬಳ್ಳಾಪುರ)',
+  'Chikkamagalore (Chikkamagalore)': 'Chikkamagalore (ಚಿಕ್ಕಮಗಳೂರು)',
+  'Gowribidanoor (Gowribidanoor)': 'Gowribidanoor (ಗೌರಿಬಿದನೂರು)',
+  'Kottur (Kottur)': 'Kottur (ಕೋಟೂರು)',
+  'Bantwala (Bantwala)': 'Bantwala (ಬಂಟ್ವಾಳ)',
+  'Belthangdi (Belthangdi)': 'Belthangdi (ಬೆಳ್ತಂಗಡಿ)',
+  'Kudchi (Kudchi)': 'Kudchi (ಕುಡಚಿ)',
+  'Haliyala (Haliyala)': 'Haliyala (ಹಳಿಯಾಳ)',
+  'Kumta (Kumta)': 'Kumta (ಕುಮಟಾ)',
+  'Kalagategi (Kalagategi)': 'Kalagategi (ಕಲಗಟೇಗಿ)',
+  'Kalburgi (Kalburgi)': 'Kalburgi (ಕಲ್ಬುರ್ಗಿ)',
+  'Mulabagilu (Mulabagilu)': 'Mulabagilu (ಮುಳಬಾಗಿಲು)',
+  'Malur (Malur)': 'Malur (ಮಾಲೂರು)',
+  'Sankeshwar (Sankeshwar)': 'Sankeshwar (ಸಂಕೇಶ್ವರ)',
+  'Shimogga(Theertahalli) (Shimogga (theertahalli))': 'Shimogga(Theertahalli) (ಶಿವಮೊಗ್ಗ (ತೀರ್ಥಹಳ್ಳಿ))',
+  'Sulya (Sulya)': 'Sirsi (ಸುಳ್ಯ)',
+  'Sirsi (Sirsi)': 'Sirsi (ಸಿರಸಿ)',
+  'Sorabha (Sorabha)': 'Sorabha (ಸೋರಭ)',
+  'Srinivasapur (Srinivasapur)': 'Srinivaspur (ಶ್ರೀನಿವಾಸಪುರ)',
+  'Yellapur (Yellapur)': 'Yellapur (ಯಲ್ಲಾಪುರ)',
+};
+
+
 
   @override
   void initState() {
     super.initState();
-    _fetchAndFilter();
+        WidgetsBinding.instance.addObserver(this);
+        _currentLangCode = 'kn';
+    selectedDistrict = widget.userDistrict.replaceAll('Division', '').trim();
+        flutterTts = FlutterTts();
+      _initTTSHandlers();
+        _initTts();
+        _translateStaticLabels();
+        _translateCategoryLabels(); // Add this
+    _loadMarketsAndThenFetch();
+    PageAPI.logPageVisit("MarketPriceScreen");
+  }
+  void _initTTSHandlers() {
+  flutterTts.setStartHandler(() {
+    setState(() {
+      _isSpeaking = true;
+      _isPaused = false;
+    });
+  });
+
+  flutterTts.setCompletionHandler(() {
+    setState(() {
+      _isSpeaking = false;
+      _isPaused = false;
+    });
+  });
+
+  flutterTts.setPauseHandler(() {
+    setState(() {
+      _isSpeaking = false;
+      _isPaused = true;
+    });
+  });
+
+  flutterTts.setContinueHandler(() {
+    setState(() {
+      _isSpeaking = true;
+      _isPaused = false;
+    });
+  });
+
+  flutterTts.setCancelHandler(() {
+    setState(() {
+      _isSpeaking = false;
+      _isPaused = false;
+    });
+  });
+}
+
+  Future<void> _loadMarketsAndThenFetch() async {
+  setState(() => isLoading = true); // Begin loading
+    await _loadMarkets();    // ⏳ wait for markets and selectedMarket
+  setState(() => isLoading = false); // Done loading
+    //await _fetchAndFilter(); // ✅ now filter based on correct market
   }
 
-  Future<void> _fetchAndFilter() async {
-    setState(() => isLoading = true);
+  void _translateStaticLabels() async {
+    labelAppBarTitle = await translateLabel("Market Prices");
+    labelCategory = await translateLabel("Category");
+    labelMarket = await translateLabel("Market");
+    labelCrop = await translateLabel("Crop");
+    labelMin = await translateLabel("Min Price");
+    labelMax = await translateLabel("Price");
+    labelModal = await translateLabel("Modal Price");
+    labelEmptyState = await translateLabel("No prices found for $selectedMarket in $selectedCategory.");
 
+    setState(() {}); // Rebuild UI with translated labels
+  }
+  Future<void> _translateCategoryLabels() async {
+  translatedCategories.clear();
+  final translator = OnDeviceTranslator(
+    sourceLanguage: TranslateLanguage.english,
+    targetLanguage: _getMLKitLanguage(_currentLangCode),
+  );
+
+  for (String category in commodityCategories.keys) {
     try {
-      final allPrices = await apiService.fetchPrices();
-
-      final district = widget.userDistrict.toLowerCase();
-      final state = widget.userState.toLowerCase();
-      final keywords = commodityCategories[selectedCategory] ?? [];
-
-      print("Total Prices: ${allPrices.length}");
-      print("Selected Catg: ${keywords}");
-      print("Filtering for State: $state, District: $district");
-
-      final locationFiltered = allPrices.where((p) {
-  final pDistrict = p.district.toLowerCase();
-  final pState = p.state.toLowerCase();
-  return pDistrict.contains(district) && pState.contains(state);
-}).toList();
-
-      print("Location matched: ${locationFiltered.length}");
-
-      setState(() {
-        filteredPrices = locationFiltered.where((p) {
-          return keywords.any((k) => p.commodity.toLowerCase().contains(k.toLowerCase()));
-        }).toList();
-      });
-
-      print("Category matched: ${filteredPrices.length}");
-
-    } catch (e) {
-      print('Error fetching prices: $e');
-    } finally {
-      setState(() => isLoading = false);
+      final native = await translator.translateText(category);
+      translatedCategories[category] = "$category ($native)";
+    } catch (_) {
+      translatedCategories[category] = category;
     }
   }
+
+  await translator.close();
+  setState(() {});
+}
+
+
+    @override
+    void dispose() {
+        WidgetsBinding.instance.removeObserver(this); // Remove observertions
+        flutterTts.stop(); // Stop any ongoing speech
+        super.dispose();
+    }
+    
+    @override
+    void didChangeAppLifecycleState(AppLifecycleState state) {
+        print("AppLifecycleState: $state");
+        if (state == AppLifecycleState.detached) {
+          flutterTts.stop();
+        }
+    }
+  
+    Future<void> _initTts() async {
+        // Set TTS language, rate, and pitch for natural speech
+        await flutterTts.setLanguage(_currentLangCode);
+        await flutterTts.setSpeechRate(0.5);
+        await flutterTts.setPitch(1.0);
+    }
+
+    Future<void> _speakText(String text) async {
+        await flutterTts.setLanguage(_currentLangCode);
+        await flutterTts.speak(text);
+    }
+
+Future<void> _loadMarkets() async {
+  try {
+    final fetchedMarkets = await apiService.fetchMarkets(
+      state: widget.userState,
+    );
+    print('fetchedMarkets $fetchedMarkets');
+
+    // Translate market names
+    final translator = OnDeviceTranslator(
+      sourceLanguage: TranslateLanguage.english,
+      targetLanguage: _getMLKitLanguage(_currentLangCode),
+    );
+
+    Map<String, String> translations = {};
+    for (String market in fetchedMarkets) {
+      try {
+        String native = await translateToNative(market);
+        String trantxt = "$market ($native)";
+        trantxt = marketTranslations[trantxt] ?? trantxt;
+        translations[market] = trantxt;
+      } catch (_) {
+        translations[market] = market;
+      }
+    }
+
+    await translator.close();
+
+    setState(() {
+      markets = fetchedMarkets;
+      translatedMarkets = translations;
+
+      selectedMarket = (markets.isNotEmpty)
+          ? markets.firstWhere(
+              (m) => m.toLowerCase().contains(widget.userDistrict.replaceAll('Division', '').trim().toLowerCase()),
+              orElse: () => markets.first,
+            )
+          : '';
+    });
+  } catch (e) {
+    print("❌ Error loading markets: $e");
+  }
+}
+Future<void> _speakVisibleTranslatedRows() async {
+  final visibleIndexes = visibleRowIndexes.toList()..sort();
+
+  if (visibleIndexes.isEmpty || translatedVisibleSentences.isEmpty) {
+    print("⚠️ No visible rows or translated sentences to speak.");
+    return;
+  }
+
+  final List<String> visibleSentences = [];
+
+  for (int i in visibleIndexes) {
+    if (i < translatedVisibleSentences.length) {
+      visibleSentences.add(translatedVisibleSentences[i]);
+    }
+  }
+
+  final textToRead = visibleSentences.join(' ');
+  if (textToRead.trim().isNotEmpty) {
+    setState(() {
+      _isSpeaking = true;
+      _isPaused = false;
+    });
+    await flutterTts.stop();
+    await flutterTts.setSpeechRate(0.5);
+    await flutterTts.setVolume(1.0);
+    await flutterTts.setPitch(1.0);
+    await flutterTts.speak(textToRead);
+
+  }
+}
+
+Future<void> _fetchAndFilter() async {
+  
+  if (isLoading) return; // prevent double loading
+  setState(() => isLoading = true);
+
+  try {
+    final allPrices = await apiService.fetchPrices(state: widget.userState);
+    allfecthState = allPrices.toList();
+
+    final keywords = commodityCategories[selectedCategory] ?? [];
+    final today = DateTime.now();
+    final selectedMarketLower = (selectedMarket ?? '').toLowerCase();
+    final selectedStateLower = widget.userState.toLowerCase();
+
+    // 📅 Filter today's data first
+    final todayData = allPrices.where((p) {
+      return p.market.toLowerCase().contains(selectedMarketLower) &&
+             p.state.toLowerCase().contains(selectedStateLower) &&
+             p.date?.toLocal().day == today.day &&
+             p.date?.toLocal().month == today.month &&
+             p.date?.toLocal().year == today.year &&
+             keywords.any((k) => p.commodity.toLowerCase().contains(k.toLowerCase()));
+    }).toList();
+
+    if (todayData.isNotEmpty) {
+      await _translateCommoditiesFor(todayData);
+      setState(() {
+        filteredPrices = todayData;
+      });
+      await _fetchAndTranslateData();
+      //await _prepareAndSpeakVisibleSentences();
+      print("✅ Showing today's data: ${filteredPrices.length}");
+    } else {
+      // 🕒 Find the most recent previous date with matching data
+      DateTime searchDate = today.subtract(Duration(days: 1));
+      List fallbackData = [];
+
+      while (searchDate.isAfter(today.subtract(Duration(days: 15)))) { // safety cutoff to avoid infinite loop
+        fallbackData = allPrices.where((p) {
+          return p.market.toLowerCase().contains(selectedMarketLower) &&
+                 p.state.toLowerCase().contains(selectedStateLower) &&
+                 p.date?.toLocal().day == searchDate.day &&
+                 p.date?.toLocal().month == searchDate.month &&
+                 p.date?.toLocal().year == searchDate.year &&
+                 keywords.any((k) => p.commodity.toLowerCase().contains(k.toLowerCase()));
+        }).toList();
+
+        if (fallbackData.isNotEmpty) break;
+        searchDate = searchDate.subtract(Duration(days: 1));
+      }
+
+      if (fallbackData.isNotEmpty) {
+        await _translateCommoditiesFor(fallbackData.cast<MarketPrice>());
+        setState(() {
+          filteredPrices = fallbackData.cast<MarketPrice>();
+        });
+
+        final fallbackStr = searchDate.toLocal().toString().split(' ')[0];
+        final confirmationEnglish = "Today's prices are not available. Showing previous data from $fallbackStr.";
+        final confirmationNative = await translateToNative(confirmationEnglish);
+
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          showDialog(
+            context: context,
+            builder: (context) => AlertDialog(
+              title: Text("Old Data"),
+              content: Text("$confirmationEnglish \n ($confirmationNative)"),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  child: Text("OK"),
+                )
+              ],
+            ),
+          );
+        });
+
+        _speakText(confirmationNative);
+        
+        //await _prepareAndSpeakVisibleSentences();
+        await _fetchAndTranslateData();
+        print("⚠️ Showing fallback data from $fallbackStr: ${filteredPrices.length}");
+      } else {
+        print("❌ No data for today or recent days.");
+        setState(() {
+          filteredPrices = [];
+        });
+      }
+    }
+  } catch (e) {
+    print('Error fetching prices: $e');
+  } finally {
+    setState(() => isLoading = false);
+  }
+}
+    Future<void> _translateCommoditiesFor(List<MarketPrice> prices) async {
+      translatedCommodities.clear();
+
+      final uniqueCommodities = prices.map((p) => p.commodity).toSet();
+
+      final translator = OnDeviceTranslator(
+        sourceLanguage: TranslateLanguage.english,
+        targetLanguage: _getMLKitLanguage(_currentLangCode),
+      );
+
+      for (var name in uniqueCommodities) {
+        try {
+          final native = await translator.translateText(name);
+          translatedCommodities[name] = "$name\n($native)";
+        } catch (e) {
+          translatedCommodities[name] = name; // fallback if error
+        }
+      }
+
+      await translator.close();
+    }
+    Future<String> translateToNative(String text) async {
+        try {
+        final translator = OnDeviceTranslator(
+            sourceLanguage: TranslateLanguage.english,
+            targetLanguage: _getMLKitLanguage(_currentLangCode),
+        );
+        final translated = await translator.translateText(text);
+        await translator.close(); // Close translator to release resources
+        return translated;
+        } catch (e) {
+        print("❌ Translation to native failed: $e");
+        return text; // Return original text on failure
+        }
+    }
+    TranslateLanguage _getMLKitLanguage(String langCode) {
+        switch (langCode) {
+        case 'hi': return TranslateLanguage.hindi;
+        case 'bn': return TranslateLanguage.bengali;
+        case 'gu': return TranslateLanguage.gujarati;
+        case 'kn': return TranslateLanguage.kannada;
+        case 'mr': return TranslateLanguage.marathi;
+        case 'ta': return TranslateLanguage.tamil;
+        case 'te': return TranslateLanguage.telugu;
+        case 'ur': return TranslateLanguage.urdu;
+        default: return TranslateLanguage.english; // Default to English
+        }
+    }
+    String formatPrice(double? price) {
+      if (price == null) return 'N/A';
+      double perKg = price / 100.0;
+      return "₹${perKg.toStringAsFixed(2)}/Kg";
+    }
+    Future<void> _togglePlayPause() async {
+      if (_isSpeaking) {
+        await flutterTts.pause();
+        setState(() {
+          _isSpeaking = false;
+          _isPaused = true;
+        });
+      } else {
+        final visibleRows = visibleRowIndexes.toList()..sort();
+        final textsToSpeak = visibleRows.map((i) {
+          final p = filteredPrices[i];
+          return "${p.commodity}: Minimum ${formatPrice(p.minPrice)}, Maximum ${formatPrice(p.maxPrice)}, Common ${formatPrice(p.modalPrice)}";
+        }).join(". ");
+        
+        if (textsToSpeak.trim().isNotEmpty) {
+          await _speakVisibleRows(textsToSpeak);
+        }
+
+        setState(() {
+          _isSpeaking = true;
+          _isPaused = false;
+        });
+      }
+    }
+    Future<void> _speakVisibleRows(String text) async {
+      await flutterTts.stop();
+      await flutterTts.setSpeechRate(0.5);
+      await flutterTts.setVolume(1.0);
+      await flutterTts.setPitch(1.0);
+      await flutterTts.speak(text);
+    }
+    Future<String> translateLabel(String english) async {
+      try {
+        final translator = OnDeviceTranslator(
+          sourceLanguage: TranslateLanguage.english,
+          targetLanguage: _getMLKitLanguage(_currentLangCode),
+        );
+        final translated = await translator.translateText(english);
+        await translator.close();
+        return "$english \n($translated)";
+      } catch (e) {
+        print("❌ Label translation failed: $e");
+        return english;
+      }
+    }
+    Future<String> translateCommodity(String name) async {
+      try {
+        final translator = OnDeviceTranslator(
+          sourceLanguage: TranslateLanguage.english,
+          targetLanguage: _getMLKitLanguage(_currentLangCode),
+        );
+        final native = await translator.translateText(name);
+        await translator.close();
+        return "$name \n($native)";
+      } catch (_) {
+        return name;
+      }
+    }
+Future<void> _fetchAndTranslateData() async {
+  final labelPrice = await translateToNative("Price");
+  final translator = OnDeviceTranslator(
+    sourceLanguage: TranslateLanguage.english,
+    targetLanguage: _getMLKitLanguage(_currentLangCode),
+  );
+
+  translatedVisibleSentences.clear();
+
+  for (var p in filteredPrices) {
+    final sentence = "${p.commodity}: $labelPrice ${formatPrice(p.maxPrice)}.";
+    try {
+      final translated = await translator.translateText(sentence);
+      translatedVisibleSentences.add(translated);
+    } catch (_) {
+      translatedVisibleSentences.add(sentence); // fallback
+    }
+  }
+
+  await translator.close();
+
+  setState(() {}); // ensure UI updates with translations
+
+  // ✅ Give time for the UI to render and VisibilityDetector to register
+  
+        WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await Future.delayed(Duration(milliseconds: 500)); // 🟡 ADD SMALL DELAY
+        print("🗣️ Trying to speak after translation + visibility detection...");
+        _speakVisibleTranslatedRows();
+        });
+}
+
+
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text("Market Prices")),
+      appBar: AppBar(title: Text(labelAppBarTitle)),
       body: Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: DropdownButton<String>(
-              value: selectedCategory,
-              onChanged: (val) {
-                setState(() => selectedCategory = val!);
-                _fetchAndFilter();
-              },
-              items: commodityCategories.keys.map((category) {
-                return DropdownMenuItem(value: category, child: Text(category));
-              }).toList(),
-            ),
-          ),
-          Expanded(
-            child: isLoading
-                ? Center(child: CircularProgressIndicator())
-                : filteredPrices.isEmpty
-                    ? Center(child: Text("No prices found for ${widget.userDistrict}, ${widget.userState} in $selectedCategory."))
-                    : ListView.builder(
-                        itemCount: filteredPrices.length,
-                        itemBuilder: (context, index) {
-                          final p = filteredPrices[index];
-                          return Card(
-                            margin: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                            child: ListTile(
-                              title: Text("${p.commodity} (${p.variety})"),
-                              subtitle: Text("${p.market}, ${p.district}, ${p.state}"),
-                              trailing: Text("₹${p.modalPrice}"),
-                            ),
+          padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(labelCategory, style: TextStyle(fontWeight: FontWeight.bold)),
+                    DropdownButton<String>(
+                      value: selectedCategory,
+                      isExpanded: true,
+                      onChanged: (val) {
+                        setState(() {
+                          selectedCategory = val!;
+                        });
+                        _fetchAndFilter();
+                      },
+                      items: commodityCategories.keys.map((category) {
+                        final displayLabel = translatedCategories[category] ?? category;
+                        return DropdownMenuItem(
+                          value: category,
+                          child: Text(displayLabel),
+                        );
+                      }).toList(),
+                    ),
+                  ],
+                ),
+              ),
+              SizedBox(width: 10),
+              if (markets.isNotEmpty)
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(labelMarket, style: TextStyle(fontWeight: FontWeight.bold)),
+                      DropdownButton<String>(
+                        value: selectedMarket,
+                        isExpanded: true,
+                        onChanged: (val) {
+                          setState(() {
+                            selectedMarket = val!;
+                          });
+                          _fetchAndFilter();
+                        },
+                        items: markets.map((market) {
+                          final displayLabel = translatedMarkets[market] ?? market;
+                          return DropdownMenuItem(
+                            value: market,
+                            child: Text(displayLabel),
                           );
+                        }).toList(),
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+          ),
+         Expanded(
+          child: isLoading
+              ? Center(child: CircularProgressIndicator())
+              : filteredPrices.isEmpty
+                  ? Center(
+                      child: FutureBuilder<String>(
+                        future: translateLabel("No prices found for $selectedMarket in $selectedCategory."),
+                        builder: (context, snapshot) {
+                          if (snapshot.connectionState == ConnectionState.waiting) {
+                            return CircularProgressIndicator(); // or SizedBox.shrink() if you want nothing
+                          } else if (snapshot.hasError) {
+                            return Text("Error");
+                          } else {
+                            return Text(snapshot.data ?? "Translation failed");
+                          }
                         },
                       ),
+                    )
+                  : Column(
+                      children: [
+                        // 🧾 Sticky Header using SliverPersistentHeader-style inside NestedScrollView
+                        Container(
+                          color: Colors.grey.shade300,
+                          padding: EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                          child: Row(
+                            children: [
+                              Expanded(flex: 3, child: Text(labelCrop, style: TextStyle(fontWeight: FontWeight.bold))),
+                              // Expanded(flex: 2, child: Text(labelMin, style: TextStyle(fontWeight: FontWeight.bold))),
+                              Expanded(flex: 2, child: Text(labelMax, style: TextStyle(fontWeight: FontWeight.bold))),
+                              // Expanded(flex: 2, child: Text(labelModal, style: TextStyle(fontWeight: FontWeight.bold))),
+                            ],
+                          ),
+                        ),
+
+                        // 📄 Scrollable Data Table
+                        Expanded(
+                          child: ListView.builder(
+                            itemCount: filteredPrices.length,
+                            itemBuilder: (context, index) {
+                              final p = filteredPrices[index];
+                              return VisibilityDetector(
+                                key: Key("row_$index"),
+                                onVisibilityChanged: (info) {
+                                  if (info.visibleFraction > 0) {
+                                    visibleRowIndexes.add(index);
+                                  } else {
+                                    visibleRowIndexes.remove(index);
+                                  }
+                                },
+                                child: Container(
+                                  margin: EdgeInsets.symmetric(horizontal: 12, vertical: 2),
+                                  padding: EdgeInsets.symmetric(vertical: 10, horizontal: 12),
+                                  decoration: BoxDecoration(
+                                    border: Border(
+                                      bottom: BorderSide(color: Colors.grey.shade300),
+                                    ),
+                                    color: Colors.white,
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Expanded(
+                                        flex: 3,
+                                        child: Text(translatedCommodities[p.commodity] ?? p.commodity),
+                                      ),
+                                      // Expanded(flex: 2, child: Text(formatPrice(p.minPrice))),
+                                      Expanded(flex: 2, child: Text(formatPrice(p.maxPrice))),
+                                      //Expanded(flex: 2, child: Text(formatPrice(p.modalPrice))),
+                                    ],
+                                  ),
+                                ),
+                              );
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
           ),
-        ],
-      ),
+
+
+
+                ],
+              ),
+floatingActionButton: FloatingActionButton(
+  onPressed: () async {
+    if (_isSpeaking) {
+      await flutterTts.pause();
+      setState(() {
+        _isSpeaking = false;
+        _isPaused = true;
+      });
+    } else {
+      final visibleIndexes = visibleRowIndexes.toList()..sort();
+
+      if (visibleIndexes.isEmpty || translatedVisibleSentences.isEmpty) return;
+  
+      // Use only currently visible translated sentences
+      final List<String> visibleSentences = [];
+
+      for (int i in visibleIndexes) {
+        if (i < translatedVisibleSentences.length) {
+          visibleSentences.add(translatedVisibleSentences[i]);
+        }
+      }
+
+      final textToRead = visibleSentences.join(' ');
+      if (textToRead.trim().isNotEmpty) {
+        await flutterTts.stop();
+        await flutterTts.setSpeechRate(0.5);
+        await flutterTts.setVolume(1.0);
+        await flutterTts.setPitch(1.0);
+        await flutterTts.speak(textToRead);
+
+        setState(() {
+          _isSpeaking = true;
+          _isPaused = false;
+        });
+      }
+    }
+  },
+  backgroundColor: Colors.grey,
+  child: Icon(_isSpeaking ? Icons.pause : Icons.volume_up),
+),
     );
   }
 }

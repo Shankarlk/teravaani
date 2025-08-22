@@ -22,7 +22,7 @@ class _AddressListScreenState extends State<AddressListScreen> {
 
   Future<void> fetchAddresses() async {
     try {
-      final response = await http.get(Uri.parse('http://172.23.176.1:3000/api/address'));
+      final response = await http.get(Uri.parse('https://teravaanii-hggpe8btfsbedfdx.canadacentral-01.azurewebsites.net/api/address'));
       if (response.statusCode == 200) {
         final List<dynamic> data = jsonDecode(response.body);
         setState(() {

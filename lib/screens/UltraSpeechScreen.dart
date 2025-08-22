@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import '../database/database_helper.dart';
 import 'dart:convert';
-import 'package:speech_to_text/speech_to_text.dart' as stt;
+import 'package:manual_speech_to_text/manual_speech_to_text.dart';
 import 'package:permission_handler/permission_handler.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 import 'dart:async'; // Import for Timer
-import '../api/pageapi.dart';
-import 'package:url_launcher/url_launcher.dart';
 
     // --- API Configuration ---
     // IMPORTANT: For Android Emulator, use '10.0.2.2' to access 'localhost' on your host machine.
@@ -84,7 +81,7 @@ import 'package:url_launcher/url_launcher.dart';
     final List<ChatMessage> _messages = [];
     final ScrollController _scrollController = ScrollController();
 
-    late stt.SpeechToText _speech;
+    late ManualSpeechToText _speech;
     bool _isListening = false;
     bool _speechAvailable = false;
     late FlutterTts flutterTts;
@@ -95,7 +92,6 @@ import 'package:url_launcher/url_launcher.dart';
     // This timer now handles both 10s query silence and 15s confirmation silence
     Timer? _speechActivityTimer;
     String _lastRecognizedWords = ''; // Stores the query for confirmation
-    String _query='';
 
     late String _currentLangCode;
     bool _isMicEnabled = true;
@@ -106,7 +102,6 @@ import 'package:url_launcher/url_launcher.dart';
         WidgetsBinding.instance.addObserver(this); // Add observer for lifecycle events
         _currentLangCode = widget.initialLangCode;
 
-        //await DatabaseHelper().db;
         flutterTts = FlutterTts();
         _initTts();
 
@@ -114,7 +109,6 @@ import 'package:url_launcher/url_launcher.dart';
         _initSpeechRecognizer();
 
         _addInitialWelcomeMessage();
-        PageAPI.logPageVisit("ChatBotScreen");
     }
 
     @override
@@ -123,7 +117,7 @@ import 'package:url_launcher/url_launcher.dart';
         _textController.dispose();
         _scrollController.dispose();
         _speech.stop(); // Ensure speech recognizer is stopped
-        _speech.cancel(); // Cancel any pending operations
+        //_speech.cancel(); // Cancel any pending operations
         flutterTts.stop(); // Stop any ongoing speech
         _speechActivityTimer?.cancel(); // Cancel any active timers
         super.dispose();
@@ -143,7 +137,7 @@ import 'package:url_launcher/url_launcher.dart';
         }
         } else if (state == AppLifecycleState.detached) {
         _speech.stop();
-        _speech.cancel();
+        //_speech.cancel();
         flutterTts.stop();
         _speechActivityTimer?.cancel();
         print("Mic stopped and resources disposed due to app being detached.");
@@ -152,7 +146,6 @@ import 'package:url_launcher/url_launcher.dart';
 
     Future<void> _initTts() async {
         // Set TTS language, rate, and pitch for natural speech
-        print('_currentLangCode: ${_currentLangCode}');
         await flutterTts.setLanguage(_currentLangCode);
         await flutterTts.setSpeechRate(0.5);
         await flutterTts.setPitch(1.0);
@@ -181,7 +174,6 @@ import 'package:url_launcher/url_launcher.dart';
             if (_chatState == ChatState.listeningQuery) {
                 if (_textController.text.isNotEmpty) {
                     _lastRecognizedWords = _textController.text; // Store the final recognized query
-                    _query = _textController.text; // Store the final recognized query
 
                     // Add the user message BEFORE confirmation prompt
                     setState(() {
@@ -213,7 +205,7 @@ import 'package:url_launcher/url_launcher.dart';
                 if (_speechActivityTimer == null || !_speechActivityTimer!.isActive) {
                     print("DEBUG: Mic stopped during confirmation (not by timeout), re-prompting.");
                     _speakText("Please give the confirmation. Say 'Yes' or 'No'.");
-                    //_startListeningForConfirmation(); // Restart listening for confirmation
+                    _startListeningForConfirmation(); // Restart listening for confirmation
                 }
             }
             } else if (status == 'listening') {
@@ -231,8 +223,6 @@ import 'package:url_launcher/url_launcher.dart';
             _isListening = false; // Turn off mic UI
             _chatState = ChatState.initial; // Reset state on error
             });
-            _isListening = false; // Turn off mic UI
-            _chatState = ChatState.initial; // Reset state on error
             _speechActivityTimer?.cancel(); // Cancel any active timers
             _speakText("An error occurred with speech recognition. Please try again.");
             _textController.clear();
@@ -330,110 +320,105 @@ import 'package:url_launcher/url_launcher.dart';
     }
     bool _hasUserSpoken = false;
     void _startListening() async {
-      final micStatus = await Permission.microphone.status;
-      if (!micStatus.isGranted) {
-        final result = await Permission.microphone.request();
-        if (!result.isGranted) {
-          print("Microphone permission not granted.");
-          _speakText("Microphone permission is required to use voice input.");
-          return;
-        }
-      }
-
-      if (_speechAvailable && !_speech.isListening) {
-        setState(() {
-          _isListening = true;
-          _textController.clear();
-          _lastRecognizedWords = '';
-        });
-        print("🎤 Mic started. Listening...");
-
-        bool userSpoke = false;
-
-        _speech.listen(
-          localeId: getSpeechLocale(_currentLangCode),
-          listenMode: stt.ListenMode.dictation,
-          listenFor: const Duration(seconds: 60),   // ✅ keep mic open longer
-          pauseFor: const Duration(seconds: 5),     // ✅ allow short pauses
-          partialResults: true,
-          onResult: (result) async {
-            if (result.recognizedWords.trim().isNotEmpty) {
-              userSpoke = true;
-              setState(() {
-                _textController.text = result.recognizedWords;
-              });
-
-              _speechActivityTimer?.cancel();
-              _speechActivityTimer = Timer(const Duration(seconds: 5), () {
-                if (_isListening && _chatState != ChatState.awaitingConfirmation) {
-                  print("DEBUG: 5-second silence detected, calling _stopListening.");
-                  _stopListening();
-                  if (_chatState != ChatState.awaitingConfirmation) {
-                    if (_textController.text.isNotEmpty) {
-                      _lastRecognizedWords = _textController.text;
-                      _query = _textController.text;
-                      setState(() {
-                        _messages.add(ChatMessage(
-                          englishText: _lastRecognizedWords,
-                          nativeText: _lastRecognizedWords,
-                          isUser: true,
-                          timestamp: DateTime.now(),
-                        ));
-                        _query = _textController.text;
-                      });
-                      _scrollToBottom();
-
-                      _textController.clear();
-                      _askForConfirmation(_lastRecognizedWords);
-                    }
-                  } else if (_chatState == ChatState.awaitingConfirmation) {
-                    if (_speechActivityTimer == null || !_speechActivityTimer!.isActive) {
-                      print("DEBUG: Mic stopped during confirmation (not by timeout), re-prompting.");
-                      _speakText("Please give the confirmation. Say 'Yes' or 'No'.");
-                      _startListeningForConfirmation();
-                    }
-                    _handleConfirmationResponse(result.recognizedWords);
-                  }
-                }else if (_chatState == ChatState.awaitingConfirmation) {
-                  print(result.recognizedWords);
-                  _handleConfirmationResponse(result.recognizedWords);
-                }
-              });
+        // Check and request microphone permission if not granted
+        final micStatus = await Permission.microphone.status;
+        if (!micStatus.isGranted) {
+            final result = await Permission.microphone.request();
+            if (!result.isGranted) {
+                print("Microphone permission not granted.");
+                _speakText("Microphone permission is required to use voice input.");
+                return;
             }
-          },
-          onSoundLevelChange: (level) {
-            // Optional: handle mic level visuals
-          },
-        );
+        }
 
-        _speechActivityTimer?.cancel();
-        _speechActivityTimer = Timer(const Duration(seconds: 5), () async {
-          if (!userSpoke && _isListening && _chatState == ChatState.listeningQuery) {
-            print("DEBUG: User did not speak within 5 seconds. Stopping mic.");
-            _stopListening();
+        if (_speechAvailable && !_speech.isListening) {
             setState(() {
-              _chatState = ChatState.initial;
-              _isListening = false;
+                _isListening = true; // Mic on UI
+                _textController.clear(); // Clear previous input to show new live transcription
+                _lastRecognizedWords = ''; // Clear last query
+                _chatState = ChatState.listeningQuery; // Set state to listening for initial query
             });
-            final confirmationEnglish = "I didn't hear anything. Please tap the mic and try again.";
-            final confirmationNative = await translateToNative(confirmationEnglish);
-            setState(() {
-                      _messages.add(ChatMessage(
-                          englishText: confirmationEnglish,
-                          nativeText: confirmationNative,
-                          isUser: false,
-                          timestamp: DateTime.now(),
-                      ));
-                    });
-            _speakText(confirmationNative);
-          }
-        });
-      } else if (_speech.isListening) {
+            print("🎤 Mic started. Listening...");
+            bool userSpoke = false; 
+
+            _speech.listen(
+                localeId: getSpeechLocale(_currentLangCode),
+                listenMode: stt.ListenMode.dictation, // Optimized for continuous dictation
+                onResult: (result) async {
+                    if (result.recognizedWords.trim().isNotEmpty) {
+                        userSpoke = true;
+                        setState(() {
+                        _textController.text = result.recognizedWords; // Display live recognized text in input box
+                        });
+                        
+                    
+                        // Reset the 10-second activity timer on new speech
+                        _speechActivityTimer?.cancel();
+                        _speechActivityTimer = Timer(const Duration(seconds: 5), () {
+                        if (_isListening && _chatState == ChatState.listeningQuery) {
+                            print("DEBUG: 10-second silence detected after speech, calling _stopListening.");
+                            _stopListening(); // This will trigger onStatus:notListening, leading to confirmation
+                            if (_chatState == ChatState.listeningQuery) {
+                                if (_textController.text.isNotEmpty) {
+                                    _lastRecognizedWords = _textController.text;
+
+                                    // ✅ Add the user message BEFORE confirmation prompt
+                                    setState(() {
+                                        _messages.add(ChatMessage(
+                                        englishText: _lastRecognizedWords,
+                                        nativeText: _lastRecognizedWords,
+                                        isUser: true,
+                                        timestamp: DateTime.now(),
+                                        ));
+                                    });
+                                    _scrollToBottom();
+
+                                    // ✅ Ask for confirmation AFTER showing user message
+                                    _textController.clear();
+                                    _askForConfirmation(_lastRecognizedWords);
+                                }
+                            } else if (_chatState == ChatState.awaitingConfirmation) {
+                                // Mic stopped during confirmation listening (e.g., due to manual tap or external interruption)
+                                // If the _speechActivityTimer for confirmation is NOT active, it means it wasn't a timeout,
+                                // so we should re-prompt immediately. If it IS active, the timer will handle the re-prompt.
+                                if (_speechActivityTimer == null || !_speechActivityTimer!.isActive) {
+                                    print("DEBUG: Mic stopped during confirmation (not by timeout), re-prompting.");
+                                    _speakText("Please give the confirmation. Say 'Yes' or 'No'.");
+                                    _startListeningForConfirmation(); // Restart listening for confirmation
+                                }
+                            }
+                        }
+                        });
+                    }
+                },
+                onSoundLevelChange: (level) {
+                // Optional: Add visual feedback for sound level if desired
+                },
+                listenFor: const Duration(minutes: 5), // Mic max time
+                pauseFor: const Duration(seconds: 10), // Mic stays on longer during silence
+                partialResults: true,
+            );
+            _speechActivityTimer?.cancel();
+            _speechActivityTimer = Timer(const Duration(seconds: 5), () async {
+            if (!userSpoke && _isListening && _chatState == ChatState.listeningQuery) {
+                print("DEBUG: User did not speak within 5 seconds. Stopping mic.");
+                _stopListening();
+                setState(() {
+                _chatState = ChatState.initial;
+                _isListening = false;
+                });
+                final confirmationEnglish = "I didn't hear anything. Please tap the mic and try again.";
+                final confirmationNative = await translateToNative(confirmationEnglish);
+                _speakText(confirmationNative);
+                //_addInitialWelcomeMessage();
+            }
+            });
+        } else if (_speech.isListening) {
         print("Already listening (QR), no need to start again.");
-      } else if (!_speechAvailable) {
+        } else if (!_speechAvailable) {
         print("Speech recognition not available (QR).");
         _speakText("Speech recognition is not available on your device.");
-      }
+        }
     }
 
     void _resetSilenceTimer() {
@@ -479,44 +464,6 @@ import 'package:url_launcher/url_launcher.dart';
     // A simplified example of how to handle user queries.
     // In a real application, this would involve more sophisticated NLP.
     Future<String> _handleQuery(String englishQuery) async {
-      print('English query:  ${englishQuery} ');
-      final lowerQuery = englishQuery.toLowerCase();
-          final cachedResponse = await DatabaseHelper().getQueryResponse(englishQuery);
-          if (cachedResponse != null) {
-            print('✅ Found cached response in query_response table.');
-            return cachedResponse;
-          }else if (englishQuery.toLowerCase().contains('temperature') && englishQuery.toLowerCase().contains('rice')) {
-            return "Rice grows best at temperatures between 20°C and 35°C.";
-          }else if (((lowerQuery.contains('water') || lowerQuery.contains('irrigation')) && lowerQuery.contains('rice')) || lowerQuery.contains('does rice need')) {
-            return "Rice requires continuous flooding with 5 to 10 cm of water throughout most of its growth.";
-          }
-          else if ((lowerQuery.contains('planting') || lowerQuery.contains('season') || lowerQuery.contains('sowing')) && lowerQuery.contains('rice')) {
-            return "In India, rice is usually planted during the Kharif season, which starts in June or July.";
-          }
-          else if ((lowerQuery.contains('fertilizer') || lowerQuery.contains('manure') || lowerQuery.contains('nutrients')) && lowerQuery.contains('rice')) {
-            return "Rice cultivation benefits from fertilizers rich in nitrogen, phosphorus, and potassium.";
-          }
-          else if (((lowerQuery.contains('variety') || lowerQuery.contains('varieties') || lowerQuery.contains('type')) && lowerQuery.contains('rice'))|| lowerQuery.contains('variety of rise')) {
-            return "Popular varieties of rice in India include Basmati, Sona Masuri, IR64, Ponni, and Gobindobhog.";
-          }
-          else if ((lowerQuery.contains('basmati') && lowerQuery.contains('rice')) || lowerQuery.contains('basuma') ) {
-            return "Basmati rice is a long-grain aromatic rice grown mainly in India and Pakistan, known for its distinct fragrance and fluffy texture.";
-          }
-          else if (((lowerQuery.contains('how long') || lowerQuery.contains('duration') || lowerQuery.contains('time')) && lowerQuery.contains('rice')) || lowerQuery.contains('how long does rise to grow')) {
-            return "Rice generally takes about 3 to 6 months to grow, depending on the variety and environmental conditions.";
-          }
-          else if (((lowerQuery.contains('pest') || lowerQuery.contains('insect') || lowerQuery.contains('bug')) && lowerQuery.contains('rice'))|| lowerQuery.contains('effect')) {
-            return "Common pests in rice cultivation include stem borers, leaf folders, brown planthoppers, and gall midges.";
-          }
-          else if ((lowerQuery.contains('disease') || lowerQuery.contains('infection') || lowerQuery.contains('virus')) && lowerQuery.contains('rice')) {
-            return "Major rice diseases include blast, sheath blight, bacterial leaf blight, and tungro virus.";
-          }
-          else if ((((lowerQuery.contains('yield') || lowerQuery.contains('production') || lowerQuery.contains('per hectare')) && lowerQuery.contains('rice')) || lowerQuery.contains("per"))|| lowerQuery.contains('what is the effect')) {
-            return "In India, the average yield of rice is around 2.7 to 3.5 tons per hectare, depending on the region and variety.";
-          }
-          else {
-            return "I don't have information on that. Searching in Google.";
-          }
         if (englishQuery.toLowerCase().contains('details of') ||
             englishQuery.toLowerCase().contains('info about') ||
             englishQuery.toLowerCase().contains('tell me about') ||
@@ -563,14 +510,10 @@ import 'package:url_launcher/url_launcher.dart';
     }
 
     void _askForConfirmation(String nativeQuery) async {
-        _lastRecognizedWords = nativeQuery;  // ✅ Ensure this always holds the last query (if not already set)
-        _query = nativeQuery; 
-            print('English in _askForConfirmation: ${_query}');
         setState(() {
         _chatState = ChatState.awaitingConfirmation; // Set state for confirmation
         });
-      _isListening = false;
-        _chatState = ChatState.awaitingConfirmation;
+
         final confirmationEnglish = "Do you want to search for this information? Say 'Yes' or 'No'.";
         final confirmationNative = await translateToNative(confirmationEnglish);
 
@@ -587,98 +530,38 @@ import 'package:url_launcher/url_launcher.dart';
         _scrollToBottom();
 
         // Automatically start listening for "Yes" or "No"
-        //_startListeningForConfirmation();
+        _startListeningForConfirmation();
     }
 
     void _startListeningForConfirmation() async {
-      await _speech.stop();
-      _speechActivityTimer?.cancel();
+        // Ensure any previous listening session is stopped
+        await _speech.stop();
+        _speechActivityTimer?.cancel(); // Clear any lingering timers
 
-      if (_speechAvailable && !_speech.isListening) {
+        if (_speechAvailable && !_speech.isListening) {
         setState(() {
-          _isListening = true;
+            _isListening = true; // Mic on for confirmation
         });
         print("DEBUG: _startListeningForConfirmation: _isListening set to TRUE. Mic button should be RED. ChatState: awaitingConfirmation.");
         print("Starting speech recognition for confirmation (QR)...");
-
         _speech.listen(
-          localeId: getSpeechLocale(_currentLangCode),
-          listenMode: stt.ListenMode.dictation,
-          listenFor: const Duration(seconds: 30),      // ✅ longer session for confirmation
-          pauseFor: const Duration(seconds: 5),        // ✅ allow short pauses
-          partialResults: true,
-          onResult: (result) async {
+            localeId: getSpeechLocale(_currentLangCode),
+            listenMode: stt.ListenMode.dictation,
+            onResult: (result) async {
             if (result.recognizedWords.trim().isNotEmpty) {
-              final recognized = result.recognizedWords.toLowerCase();
-              print("DEBUG: Confirmation recognized: $recognized");
-              _textController.text = result.recognizedWords;
+                final recognized = result.recognizedWords.toLowerCase();
+                print("DEBUG: Confirmation recognized: $recognized");
+                _textController.text = result.recognizedWords; // Show recognized confirmation in text box
 
-              if (recognized.contains('yes') ||
-                  recognized.contains('yeah') ||
-                  recognized.contains('sure') ||
-                  recognized.contains('ಹೌದು') || recognized.contains('ಹೌದು')) {
-                print("DEBUG: User said YES.");
-                _stopListening();
-                _processConfirmedQuery();
-                _textController.clear();
-              }
-              else if (recognized.contains('no') ||
-                  recognized.contains('nope') ||
-                  recognized.contains('nah') ||
-                  recognized.contains('ಇಲ್ಲ')) {
-                print("DEBUG: User said NO.");
-                _stopListening();
-                _cancelQuery();
-                _textController.clear();
-              }
-              else {
-                final confirmationEnglish = "Please say 'Yes' or 'No'.";
-                final confirmationNative = await translateToNative(confirmationEnglish);
-                _speakText(confirmationNative);
-
-                _speechActivityTimer?.cancel();
-                _speechActivityTimer = Timer(const Duration(seconds: 15), () {
-                  if (_isListening && _chatState == ChatState.awaitingConfirmation) {
-                    print("DEBUG: No valid confirmation received within 15 seconds, re-asking.");
-                    _askForConfirmation(_lastRecognizedWords);
-                  }
-                });
-              }
-            }
-          },
-          onSoundLevelChange: (level) {
-            // Optional: handle mic level visuals
-          },
-        );
-
-        _speechActivityTimer = Timer(const Duration(seconds: 15), () {
-          if (_isListening && _chatState == ChatState.awaitingConfirmation) {
-            print("DEBUG: No confirmation received within 15 seconds, re-asking.");
-            _askForConfirmation(_lastRecognizedWords);
-          }
-        });
-      } else if (_speech.isListening) {
-        print("Already listening for confirmation.");
-      } else if (!_speechAvailable) {
-        print("Speech recognition not available for confirmation.");
-        _speakText("Speech recognition is not available to confirm your query.");
-        _cancelQuery();
-      }
-    }
-
-    void _handleConfirmationResponse(String recognizedWords) async {
-            print('English in _handleConfirmationResponse: ${_query}');
-        final recognized = recognizedWords.toLowerCase();
-        print("DEBUG: Confirmation recognized: $recognized");
-
-              if (recognized.contains('yes') || recognized.contains('yeah') || recognized.contains('sure') || recognized.contains('ಹೌದು') || recognized.contains('ಎಸ್')) {
+                // Check for "Yes" variations including Kannada "ಹೌದು"
+                if (recognized.contains('yes') || recognized.contains('yeah') || recognized.contains('sure') || recognized.contains('ಹೌದು')) {
                 print("DEBUG: User said YES.");
                 _stopListening(); // Stop confirmation listening
                 _processConfirmedQuery();
                 _textController.clear(); // Clear text box immediately after processing
                 }
                 // Check for "No" variations including Kannada "ಇಲ್ಲ"
-                else if (recognized.contains('no') || recognized.contains('nope') || recognized.contains('nah') || recognized.contains('ಇಲ್ಲ')|| recognized.contains('ನೋ')) {
+                else if (recognized.contains('no') || recognized.contains('nope') || recognized.contains('nah') || recognized.contains('ಇಲ್ಲ')) {
                 print("DEBUG: User said NO.");
                 _stopListening(); // Stop confirmation listening
                 _cancelQuery();
@@ -697,8 +580,29 @@ import 'package:url_launcher/url_launcher.dart';
                     }
                 });
                 }
+            }
+            },
+            onSoundLevelChange: (level) {},
+                pauseFor: const Duration(seconds: 10), // Mic stays on longer during silence
+                cancelOnError: false,
+                partialResults: true,
+        );
+        // Set a timeout for confirmation response (15 seconds).
+        // If this timer fires, it means no valid 'Yes'/'No' was heard within the period.
+        _speechActivityTimer = Timer(const Duration(seconds: 15), () {
+            if (_isListening && _chatState == ChatState.awaitingConfirmation) {
+            print("DEBUG: No confirmation received within 15 seconds, re-asking.");
+            _askForConfirmation(_lastRecognizedWords); // Re-ask for confirmation
+            }
+        });
+        } else if (_speech.isListening) {
+        print("Already listening for confirmation.");
+        } else if (!_speechAvailable) {
+        print("Speech recognition not available for confirmation.");
+        _speakText("Speech recognition is not available to confirm your query.");
+        _cancelQuery(); // Cancel if cannot listen for confirmation
+        }
     }
-
 
     void _processConfirmedQuery() async {
         _speechActivityTimer?.cancel(); // Cancel any active timer
@@ -715,12 +619,11 @@ import 'package:url_launcher/url_launcher.dart';
         _speakText(await translateToNative("Searching for the information...")); // Announce search
 
         // Translate the confirmed query to English and handle it
-        final englishQueryForProcessing = await translateNativeToEnglish(_query);
+        final englishQueryForProcessing = await translateNativeToEnglish(_lastRecognizedWords);
         final englishResponse = await _handleQuery(englishQueryForProcessing);
         final nativeResponse = await translateToNative(englishResponse);
 
         // Add response to chat history
-        
         setState(() {
         _messages.add(ChatMessage(
             englishText: englishResponse,
@@ -732,43 +635,9 @@ import 'package:url_launcher/url_launcher.dart';
         _chatState = ChatState.responseDisplayed; // Update state
         _isMicEnabled = true; 
         });
+
         _speakText(nativeResponse); // Speak the response
         _scrollToBottom();
-        if (isFallbackNeeded(_messages)) {
-          final serpResults = await fetchSerpResults(_query);
-
-          if (serpResults.isNotEmpty) {
-            for (final result in serpResults) {
-              final resp = "${result['title'] ?? ''}\n${result['snippet'] ?? ''}\n${result['link'] ?? ''}";
-              final nativeresp = await translateToNative("${result['title'] ?? ''}\n${result['snippet'] ?? ''}");
-
-              setState(() {
-                _messages.add(ChatMessage(
-                  englishText: resp,
-                  nativeText: '',
-                  isUser: false,
-                  timestamp: DateTime.now(),
-                ));
-              });
-              if (serpResults.indexOf(result) == serpResults.length - 1) {
-                _speakText(nativeresp);
-              } // Optional: You can choose to speak only the first one if it's too much
-            }
-            _scrollToBottom();
-          } else {
-            final respfl = "Sorry, I couldn’t find anything online either.";
-            final nativerespfl = await translateToNative(respfl);
-            setState(() {
-              _messages.add(ChatMessage(
-                  englishText: respfl,
-                  nativeText: nativerespfl,
-                  isUser: false,
-                  timestamp: DateTime.now(),
-              ));
-            });
-          }
-        }
-
         //_addInitialWelcomeMessage(); // Prompt for next query
     }
 
@@ -818,50 +687,6 @@ import 'package:url_launcher/url_launcher.dart';
         await flutterTts.speak(text);
     }
 
-    Future<List<Map<String, dynamic>>> fetchSerpResults(String query) async {
-      final apiKey = 'cddad9eaa32fa99528259fe4b2c52264e7e20bbb0a3fe87dc349e6255d2109b8'; // Replace with your key
-      final url = Uri.parse(
-          'https://serpapi.com/search.json?q=$query&hl=en&gl=in&api_key=$apiKey');
-
-      final response = await http.get(url);
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-
-        // Extract results (top 5 organic)
-        final results = data['organic_results'] as List;
-        return results.take(5).map((result) {
-          return {
-            'title': result['title'],
-            'snippet': result['snippet'],
-            'link': result['link'],
-          };
-        }).toList();
-      } else {
-        throw Exception('Failed to load results');
-      }
-    }
-    bool isFallbackNeeded(List<ChatMessage> messages) {
-      if (messages.isEmpty) return false;
-
-      final last = messages.last;
-      final knownFallbacks = [
-        "I don't know",
-        "I can't provide",
-        "For general crop information",
-        "You can check holidays",
-        "You said:",
-        "Market prices",
-        "I don't have information on that. Searching in Google.",
-        "Sorry, I don't have that information",
-        "I couldn’t find anything",
-      ];
-
-      return !last.isUser &&
-            knownFallbacks.any((fallback) => last.englishText.toLowerCase().contains(fallback.toLowerCase()));
-    }
-
-
-
     @override
     Widget build(BuildContext context) {
         return Scaffold(
@@ -872,15 +697,15 @@ import 'package:url_launcher/url_launcher.dart';
         body: Column(
             children: [
             Expanded(
-              child: ListView.builder(
-                      controller: _scrollController,
-                      padding: const EdgeInsets.all(12.0),
-                      itemCount: _messages.length,
-                      itemBuilder: (context, index) {
-                        final message = _messages[index];
-                        return _buildMessageBubble(message);
-                      },
-                    ),
+                child: ListView.builder(
+                controller: _scrollController,
+                padding: const EdgeInsets.all(12.0),
+                itemCount: _messages.length,
+                itemBuilder: (context, index) {
+                    final message = _messages[index];
+                    return _buildMessageBubble(message);
+                },
+                ),
             ),
             // Show loading indicator when sending query
             if (_isSending)
@@ -1057,132 +882,3 @@ import 'package:url_launcher/url_launcher.dart';
         );
     }
     }
-
-
-
-    /*
-    void _startListening() async {
-        // Check and request microphone permission if not granted
-        final micStatus = await Permission.microphone.status;
-        if (!micStatus.isGranted) {
-            final result = await Permission.microphone.request();
-            if (!result.isGranted) {
-                print("Microphone permission not granted.");
-                _speakText("Microphone permission is required to use voice input.");
-                return;
-            }
-        }
-
-        if (_speechAvailable && !_speech.isListening) {
-            setState(() {
-                _isListening = true; // Mic on UI
-                _textController.clear(); // Clear previous input to show new live transcription
-                _lastRecognizedWords = ''; // Clear last query // Set state to listening for initial query // Clear last query // Set state to listening for initial query
-            });
-            print("🎤 Mic started. Listening...");
-            bool userSpoke = false; 
-
-            _speech.listen(
-                localeId: getSpeechLocale(_currentLangCode),
-                listenMode: stt.ListenMode.dictation, // Optimized for continuous dictation
-                onResult: (result) async {
-                    if (result.recognizedWords.trim().isNotEmpty) {
-                        userSpoke = true;
-                        setState(() {
-                        _textController.text = result.recognizedWords; // Display live recognized text in input box
-                        });
-                        
-                    
-                        // Reset the 10-second activity timer on new speech
-                        _speechActivityTimer?.cancel();
-                        _speechActivityTimer = Timer(const Duration(seconds: 5), () {
-                        if (_isListening && _chatState != ChatState.awaitingConfirmation) {
-                            print("DEBUG: 10-second silence detected after speech, calling _stopListening.");
-                            _stopListening(); // This will trigger onStatus:notListening, leading to confirmation
-                            if (_chatState != ChatState.awaitingConfirmation) {
-                                if (_textController.text.isNotEmpty) {
-                                    _lastRecognizedWords = _textController.text;
-                                    _query = _textController.text;
-                                     print('English in Start listen: ${_query}');
-                                    // ✅ Add the user message BEFORE confirmation prompt
-                                    setState(() {
-                                        _messages.add(ChatMessage(
-                                        englishText: _lastRecognizedWords,
-                                        nativeText: _lastRecognizedWords,
-                                        isUser: true,
-                                        timestamp: DateTime.now(),
-                                        ));
-                                    _query = _textController.text;
-                                    });
-                                    _scrollToBottom();
-
-                                    // ✅ Ask for confirmation AFTER showing user message
-                                    _textController.clear();
-                                    _askForConfirmation(_lastRecognizedWords);
-                                }
-                            } else if (_chatState == ChatState.awaitingConfirmation) {
-                                // Mic stopped during confirmation listening (e.g., due to manual tap or external interruption)
-                                // If the _speechActivityTimer for confirmation is NOT active, it means it wasn't a timeout,
-                                // so we should re-prompt immediately. If it IS active, the timer will handle the re-prompt.
-                                // if (_speechActivityTimer == null || !_speechActivityTimer!.isActive) {
-                                //     print("DEBUG: Mic stopped during confirmation (not by timeout), re-prompting.");
-                                //     _speakText("Please give the confirmation. Say 'Yes' or 'No'.");
-                                //     _startListeningForConfirmation(); // Restart listening for confirmation
-                                // }
-                                _handleConfirmationResponse(result.recognizedWords);
-                            }
-                        }else if (_chatState == ChatState.awaitingConfirmation) {
-                                // Mic stopped during confirmation listening (e.g., due to manual tap or external interruption)
-                                // If the _speechActivityTimer for confirmation is NOT active, it means it wasn't a timeout,
-                                // so we should re-prompt immediately. If it IS active, the timer will handle the re-prompt.
-                                // if (_speechActivityTimer == null || !_speechActivityTimer!.isActive) {
-                                //     print("DEBUG: Mic stopped during confirmation (not by timeout), re-prompting.");
-                                //     _speakText("Please give the confirmation. Say 'Yes' or 'No'.");
-                                //     _startListeningForConfirmation(); // Restart listening for confirmation
-                                // }
-                                print(result.recognizedWords);
-                                _handleConfirmationResponse(result.recognizedWords);
-                            }
-                        });
-                    }
-                },
-                onSoundLevelChange: (level) {
-                // Optional: Add visual feedback for sound level if desired
-                },
-                listenFor: const Duration(minutes: 5), // Mic max time
-                pauseFor: const Duration(seconds: 10), // Mic stays on longer during silence
-                partialResults: true,
-            );
-            _speechActivityTimer?.cancel();
-            _speechActivityTimer = Timer(const Duration(seconds: 5), () async {
-            if (!userSpoke && _isListening) {
-                print("DEBUG: User did not speak within 5 seconds. Stopping mic.");
-                _stopListening();
-                setState(() {
-                _chatState = ChatState.initial;
-                _isListening = false;
-                });
-                final confirmationEnglish = "I didn't hear anything. Please tap the mic and try again.";
-                final confirmationNative = await translateToNative(confirmationEnglish);
-                
-                // Add confirmation message to chat history (this is the assistant's message)
-                setState(() {
-                  _messages.add(ChatMessage(
-                      englishText: confirmationEnglish,
-                      nativeText: confirmationNative,
-                      isUser: false,
-                      timestamp: DateTime.now(),
-                  ));
-                });
-                _speakText(confirmationNative);
-                //_addInitialWelcomeMessage();
-            }
-            });
-        } else if (_speech.isListening) {
-        print("Already listening (QR), no need to start again.");
-        } else if (!_speechAvailable) {
-        print("Speech recognition not available (QR).");
-        _speakText("Speech recognition is not available on your device.");
-        }
-    } 
-    */

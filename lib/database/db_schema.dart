@@ -65,4 +65,23 @@ class DBSchema {
       created_at TEXT DEFAULT CURRENT_TIMESTAMP
     );
   ''';
+
+  static const createQueryResponse = '''
+  CREATE TABLE query_response (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    query TEXT NOT NULL,
+    response TEXT NOT NULL,
+    timestamp TEXT DEFAULT CURRENT_TIMESTAMP
+  );
+''';
+
+  static const createPostHarvestOfflineTable = '''
+          CREATE TABLE post_harvest_queue (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            userId TEXT,
+            cropName TEXT,
+            sowingDate TEXT
+          );
+        ''';
+
 }

@@ -4,10 +4,10 @@ class MarketPrice {
   final String market;
   final String commodity;
   final String variety;
-  final String arrivalDate;
-  final String minPrice;
-  final String maxPrice;
-  final String modalPrice;
+  final double? modalPrice;
+  final double? maxPrice;
+  final double? minPrice;
+  final DateTime? date;
 
   MarketPrice({
     required this.state,
@@ -15,23 +15,23 @@ class MarketPrice {
     required this.market,
     required this.commodity,
     required this.variety,
-    required this.arrivalDate,
+    required this.modalPrice,
     required this.minPrice,
     required this.maxPrice,
-    required this.modalPrice,
+    required this.date
   });
 
   factory MarketPrice.fromJson(Map<String, dynamic> json) {
     return MarketPrice(
-      state: json['state'],
-      district: json['district'],
-      market: json['market'],
-      commodity: json['commodity'],
-      variety: json['variety'],
-      arrivalDate: json['arrival_date'],
-      minPrice: json['min_price'],
-      maxPrice: json['max_price'],
-      modalPrice: json['modal_price'],
+      state: json['State'] ?? '',
+      district: json['District'] ?? '',
+      market: json['Market'] ?? '',
+      commodity: json['Commodity'] ?? '',
+      variety: json['Variety'] ?? '',
+      minPrice: (json['MinPrice'] as num?)?.toDouble(),
+      maxPrice: (json['MaxPrice'] as num?)?.toDouble(),
+      modalPrice: (json['ModalPrice'] as num?)?.toDouble(),
+      date: json['Date'] != null ? DateTime.tryParse(json['Date']) : null,
     );
   }
 }
