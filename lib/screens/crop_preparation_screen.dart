@@ -183,68 +183,92 @@ class _CropPreparationScreenState extends State<CropPreparationScreen> with Widg
   }
 
   Future<void> fetchPreparationSteps(String crop) async {
-    try {
-      final url = Uri.parse("http://172.20.10.5:3000/api/preparation/$crop");
-      final response = await http.get(url);
+  try {
+    final url = Uri.parse("http://172.20.10.5:3000/api/preparation/$crop");
+    final response = await http.get(url);
 
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        final steps = data['steps'] as List<dynamic>;
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final steps = data['steps'] as List<dynamic>;
 
-        if (steps.isEmpty) {
-          final msg = await translateToNative("No steps found.");
-          setState(() {
-            preparationSteps = msg;
-            showPreparation = true;
-            isErrorOrNoSteps = true; 
-          });
-          await flutterTts.speak(msg);
-          return;
-        }
-
-        final englishList = <String>[];
-        final nativeList = <String>[];
-
-        for (var step in steps) {
-          final englishText =
-              "${step['StepOrder']}. ${step['StepTitle']}: ${step['StepDescription']}";
-          final nativeText = await translateToNative(englishText);
-          englishList.add(englishText);
-          nativeList.add(nativeText);
-        }
-
+      if (steps.isEmpty) {
+        final msg = await translateToNative("No steps found.");
         setState(() {
-          englishSteps = englishList.join("\n");
-          nativeSteps = nativeList.join("\n");
+          preparationSteps = msg;
           showPreparation = true;
-          isSpeaking = true;
-          isErrorOrNoSteps = false;
+          isErrorOrNoSteps = true;
         });
-
-        await flutterTts.speak(nativeList.join(". "));
-      } else {
-        final err = await translateToNative(
-          "Failed to fetch preparation steps.",
-        );
-        setState(() {
-            preparationSteps = err; // Store the message
-            showPreparation = true;
-            isErrorOrNoSteps = true; // Set the flag
-        });
-        await flutterTts.speak(err);
+        await flutterTts.speak(msg);
+        return;
       }
-    } catch (e) {
-      final err = await translateToNative(
-        "Service unavailable. Please try again later.",
-      );
+
+      final englishList = <String>[];
+      final nativeList = <String>[];
+
+      for (var step in steps) {
+        final englishText =
+            "${step['StepOrder']}. ${step['StepTitle']}: ${step['StepDescription']}";
+        final nativeText = await translateToNative(englishText);
+        englishList.add(englishText);
+        nativeList.add(nativeText);
+      }
+
       setState(() {
-        preparationSteps = err;
+        englishSteps = englishList.join("\n");
+        nativeSteps = nativeList.join("\n");
         showPreparation = true;
-        isErrorOrNoSteps = true; 
+        isSpeaking = true;
+        isErrorOrNoSteps = false;
+      });
+
+      await flutterTts.speak(nativeList.join(". "));
+    } else {
+      final err = await translateToNative("Failed to fetch preparation steps.");
+      setState(() {
+        preparationSteps = "Failed to fetch preparation steps.\n($err)";
+        showPreparation = true;
+        isErrorOrNoSteps = true;
       });
       await flutterTts.speak(err);
     }
+  } catch (e) {
+    final err = await translateToNative(
+      "Service unavailable. Please try again later.",
+    );
+    final almsg = await translateToNative(
+      "Alert",
+    );
+    final okmsg = await translateToNative(
+      "ok",
+    );
+    setState(() {
+      preparationSteps = err;
+      showPreparation = false;
+      isErrorOrNoSteps = true;
+    });
+    await flutterTts.speak(err);
+    if (mounted) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text("Alert\n($almsg)"),
+          content: Text("Service unavailable. Please try again later.\n($err)"),
+          actions: [
+            TextButton(
+                onPressed: () {
+                  setState(() {
+                    cropName = null;
+                  });
+                  Navigator.of(ctx).pop();
+                },
+                child: Text("OK\n($okmsg)"),
+              ),
+          ],  
+        ),
+      );
+    }
   }
+}
 
   List<Widget> _buildStepList(String englishSteps, String nativeSteps) {
     final englishLines = englishSteps.split('\n');
@@ -449,18 +473,6 @@ class _CropPreparationScreenState extends State<CropPreparationScreen> with Widg
                             ],
                           ),
                           const SizedBox(height: 12),
-
-                          // 🔴 If error -> show error message
-                          if (isErrorOrNoSteps && preparationSteps != null)
-                            Text(
-                              preparationSteps!,
-                              style: const TextStyle(
-                                fontSize: 16,
-                                color: Colors.red,
-                              ),
-                            )
-                          else
-                            // ✅ Otherwise show the steps list
                             ..._buildStepList(englishSteps, nativeSteps),
                         ],
                       ),
@@ -537,7 +549,7 @@ class _CropPreparationScreenState extends State<CropPreparationScreen> with Widg
               width: double.infinity,
               padding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey),
+                border: Border.all(color: Colors.grey.withOpacity(0.2)),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(value.isEmpty ? '-' : value),

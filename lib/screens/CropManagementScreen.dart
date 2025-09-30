@@ -193,7 +193,7 @@ class _CropManagementScreenState extends State<CropManagementScreen> with Widget
   @override
   void didPopNext() {
     super.didPopNext();
-    Future.delayed(const Duration(milliseconds: 300), () {
+    Future.delayed(const Duration(milliseconds: 500), () {
       _speakContent();
     });
   }

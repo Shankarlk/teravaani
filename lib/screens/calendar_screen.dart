@@ -60,7 +60,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
 
     WidgetsBinding.instance.addPostFrameCallback((_) async {
     if (widget.cropName != null && widget.cropName!.isNotEmpty) {
-      // 👇 Auto-fetch if cropName provided
       setState(() {
         cropName = widget.cropName;
         cropAsked = true;
@@ -68,7 +67,6 @@ class _CalendarScreenState extends State<CalendarScreen> {
       });
       await _fetchEvents(widget.cropName!);
     } else {
-      // 👇 Ask user by voice if no cropName
       final msg = await translateToNative("Please say the crop name");
       await flutterTts.speak(msg);
     }
@@ -185,44 +183,77 @@ class _CalendarScreenState extends State<CalendarScreen> {
   }
 
   Future<void> _fetchEvents(String crop) async {
-    try {
-      final uri = Uri.parse(
-        "http://172.20.10.5:3000/api/cropcalendarbyuser?userId=${widget.userId}&cropName=$crop",
-      );
-      final response = await http.get(uri);
-      print("📡 API Response: ${response.statusCode}");
+  try {
+    final uri = Uri.parse(
+      "http://172.20.10.5:3000/api/cropcalendarbyuser?userId=${widget.userId}&cropName=$crop",
+    );
+    final response = await http.get(uri);
+    print("📡 API Response: ${response.statusCode}");
 
-      if (response.statusCode == 200) {
-        final List data = jsonDecode(response.body);
-        print("📡 API Response: ${data} ${crop}");
+    if (response.statusCode == 200) {
+      final List data = jsonDecode(response.body);
+      print("📡 API Response: $data $crop");
 
-        if (data.isEmpty) {
-          final msg = await translateToNative(
-            "The crop is not added in post harvest screen.",
-          );
-          setState(() {
-            errorMessage = msg;
-            events.clear();
-          });
-          await flutterTts.speak(msg);
-        } else {
-          setState(() {
-            events = data.map((e) => CropEvent.fromJson(e)).toList();
-          });
-        }
-      } else {
-        final msg = await translateToNative("Failed to fetch crop events.");
-        setState(() => errorMessage = msg);
+      if (data.isEmpty) {
+        final msg = await translateToNative(
+          "We Dont have Details of $crop. Please Check other Crops",
+        );
+        setState(() {
+          errorMessage = "We Dont have Details of $crop. Please Check other Crops\n ($msg)";
+          events.clear();
+        });
         await flutterTts.speak(msg);
+      } else {
+        setState(() {
+          events = data.map((e) => CropEvent.fromJson(e)).toList();
+        });
       }
-    } catch (e) {
-      final msg = await translateToNative("Service unavailable. Please try again later.");
+    } else {
+      final msg = await translateToNative("Failed to fetch crop events.");
       setState(() => errorMessage = msg);
       await flutterTts.speak(msg);
-    } finally {
+    }
+  } catch (e) {
+    final msg = await translateToNative(
+      "Service unavailable. Please try again later.",
+    );
+    final almsg = await translateToNative(
+      "Alert",
+    );
+    final okmsg = await translateToNative(
+      "ok",
+    );
+
+    setState(() => errorMessage = "");
+    await flutterTts.speak(msg);
+
+    // 🔹 Show Alert Box
+    if (mounted) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text("Alert\n($almsg)"),
+          content: Text("Service unavailable. Please try again later.\n($msg)"),
+          actions: [
+            TextButton(
+              onPressed: () {
+                  setState(() {
+                    cropName = null;
+                  });
+                  Navigator.of(ctx).pop();
+                },
+                child: Text("OK\n($okmsg)"),
+            ),
+          ],
+        ),
+      );
+    }
+  } finally {
+    if (mounted) {
       setState(() => isLoading = false);
     }
   }
+}
 
   Future<String> _getVisibleText() async {
     if (events.isEmpty) return "";
@@ -319,7 +350,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
                               vertical: 14,
                             ),
                             decoration: BoxDecoration(
-                              border: Border.all(color: Colors.grey),
+                              border: Border.all(color: Colors.grey.withOpacity(0.2)),
                               borderRadius: BorderRadius.circular(8),
                             ),
                             child: Text(

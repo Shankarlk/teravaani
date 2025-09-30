@@ -319,6 +319,7 @@ class _MarketPriceScreenState extends State<MarketPriceScreen>
     await _loadMarkets(); // ⏳ wait for markets and selectedMarket
     setState(() => isLoading = false); // Done loading
     //await _fetchAndFilter(); // ✅ now filter based on correct market
+    setState(() => isLoading = false); 
   }
 
   void _translateStaticLabels() async {
@@ -428,6 +429,35 @@ class _MarketPriceScreenState extends State<MarketPriceScreen>
       });
     } catch (e) {
       print("❌ Error loading markets: $e");
+        String responseMessageNt = await translateToNative(
+          "Service unavailable. Please try again later.",
+        );
+        final almsg = await translateToNative("Alert");
+        final okmsg = await translateToNative("ok");
+        setState(() {
+
+        });
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Text("Alert\n($almsg)"),
+              content: Text(
+                "Service unavailable. Please try again later.\n($responseMessageNt)",
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                  },
+                  child: Text("OK\n($okmsg)"),
+                ),
+              ],
+            ),
+          );
+          await flutterTts.speak(responseMessageNt);
+        }
+
     }
   }
 
@@ -462,109 +492,112 @@ class _MarketPriceScreenState extends State<MarketPriceScreen>
   }
 
   Future<void> _fetchAndFilter() async {
-    if (isLoading) return; // prevent double loading
-    setState(() => isLoading = true);
+  if (isLoading) return; // prevent double loading
+  setState(() => isLoading = true);
 
-    try {
-      final allPrices = await apiService.fetchPrices(state: widget.userState);
-      allfecthState = allPrices.toList();
+  try {
+    final allPrices = await apiService.fetchPrices(state: widget.userState);
+    allfecthState = allPrices.toList();
 
-      final keywords = commodityCategories[selectedCategory] ?? [];
-      final today = DateTime.now();
-      final selectedMarketLower = (selectedMarket ?? '').toLowerCase();
-      final selectedStateLower = widget.userState.toLowerCase();
+    final keywords = commodityCategories[selectedCategory] ?? [];
+    final today = DateTime.now();
+    final selectedMarketLower = (selectedMarket ?? '').toLowerCase();
+    final selectedStateLower = widget.userState.toLowerCase();
 
-      // 📅 Filter today's data first
-      final todayData = allPrices.where((p) {
-        return p.market.toLowerCase().contains(selectedMarketLower) &&
-            p.state.toLowerCase().contains(selectedStateLower) &&
-            p.date?.toLocal().day == today.day &&
-            p.date?.toLocal().month == today.month &&
-            p.date?.toLocal().year == today.year &&
-            keywords.any(
-              (k) => p.commodity.toLowerCase().contains(k.toLowerCase()),
-            );
-      }).toList();
-
-      if (todayData.isNotEmpty) {
-        await _translateCommoditiesFor(todayData);
-        setState(() {
-          filteredPrices = todayData;
-        });
-        await _fetchAndTranslateData();
-        //await _prepareAndSpeakVisibleSentences();
-        print("✅ Showing today's data: ${filteredPrices.length}");
-      } else {
-        // 🕒 Find the most recent previous date with matching data
-        DateTime searchDate = today.subtract(Duration(days: 1));
-        List fallbackData = [];
-
-        while (searchDate.isAfter(today.subtract(Duration(days: 15)))) {
-          // safety cutoff to avoid infinite loop
-          fallbackData = allPrices.where((p) {
-            return p.market.toLowerCase().contains(selectedMarketLower) &&
-                p.state.toLowerCase().contains(selectedStateLower) &&
-                p.date?.toLocal().day == searchDate.day &&
-                p.date?.toLocal().month == searchDate.month &&
-                p.date?.toLocal().year == searchDate.year &&
-                keywords.any(
-                  (k) => p.commodity.toLowerCase().contains(k.toLowerCase()),
-                );
-          }).toList();
-
-          if (fallbackData.isNotEmpty) break;
-          searchDate = searchDate.subtract(Duration(days: 1));
-        }
-
-        if (fallbackData.isNotEmpty) {
-          await _translateCommoditiesFor(fallbackData.cast<MarketPrice>());
-          setState(() {
-            filteredPrices = fallbackData.cast<MarketPrice>();
-          });
-
-          final fallbackStr = searchDate.toLocal().toString().split(' ')[0];
-          final confirmationEnglish =
-              "Today's prices are not available. Showing previous data from $fallbackStr.";
-          final confirmationNative = await translateToNative(
-            confirmationEnglish,
+    bool matches(MarketPrice p, DateTime d) {
+      return p.market.toLowerCase().contains(selectedMarketLower) &&
+          p.state.toLowerCase().contains(selectedStateLower) &&
+          p.date?.toLocal().day == d.day &&
+          p.date?.toLocal().month == d.month &&
+          p.date?.toLocal().year == d.year &&
+          keywords.any(
+            (k) => p.commodity.toLowerCase().contains(k.toLowerCase()),
           );
-
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            showDialog(
-              context: context,
-              builder: (context) => AlertDialog(
-                title: Text("Old Data"),
-                content: Text("$confirmationEnglish \n ($confirmationNative)"),
-                actions: [
-                  TextButton(
-                    onPressed: () => Navigator.of(context).pop(),
-                    child: Text("OK"),
-                  ),
-                ],
-              ),
-            );
-          });
-
-          _speakText(confirmationNative);
-
-          //await _prepareAndSpeakVisibleSentences();
-          await _fetchAndTranslateData();
-          print(
-            "⚠️ Showing fallback data from $fallbackStr: ${filteredPrices.length}",
-          );
-        } else {
-          print("❌ No data for today or recent days.");
-          setState(() {
-            filteredPrices = [];
-          });
-        }
-      }
-    } catch (e) {
-      print('Error fetching prices: $e');
-    } finally {
-      setState(() => isLoading = false);
     }
+
+    // ✅ Try today's data
+    final todayData = allPrices.where((p) => matches(p, today)).toList();
+
+    if (todayData.isNotEmpty) {
+      await _translateCommoditiesFor(todayData);
+      setState(() {
+        filteredPrices = todayData;
+      });
+      await _fetchAndTranslateData();
+      print("✅ Showing today's data: ${filteredPrices.length}");
+      return;
+    }
+
+    // ✅ Try yesterday's data only
+    final yesterday = today.subtract(const Duration(days: 1));
+    final yesterdayData = allPrices.where((p) => matches(p, yesterday)).toList();
+
+    if (yesterdayData.isNotEmpty) {
+      await _translateCommoditiesFor(yesterdayData);
+      setState(() {
+        filteredPrices = yesterdayData;
+      });
+
+      final fallbackStr = yesterday.toLocal().toString().split(' ')[0];
+      final confirmationEnglish =
+          "Today's prices are not available. Showing yesterday's data from $fallbackStr.";
+      final confirmationNative = await translateToNative(confirmationEnglish);
+
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: Text("Old Data"),
+            content: Text("$confirmationEnglish \n ($confirmationNative)"),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.of(context).pop(),
+                child: const Text("OK"),
+              ),
+            ],
+          ),
+        );
+      });
+
+      _speakText(confirmationNative);
+      await _fetchAndTranslateData();
+      print("⚠️ Showing yesterday's data: ${filteredPrices.length}");
+      return;
+    }
+
+    // ❌ Neither today nor yesterday available
+    setState(() {
+      filteredPrices = [];
+    });
+
+    final msgEng =
+        "No Prices found for this category and market.";
+    final msgNative = await translateToNative(msgEng);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: Text("No Data"),
+          content: Text("$msgEng\n($msgNative)"),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text("OK"),
+            ),
+          ],
+        ),
+      );
+    });
+
+    _speakText(msgNative);
+
+  } catch (e) {
+    print('Error fetching prices: $e');
+  } finally {
+    setState(() => isLoading = false);
   }
+}
 
   Future<void> _translateCommoditiesFor(List<MarketPrice> prices) async {
     translatedCommodities.clear();

@@ -404,19 +404,48 @@ class _PostHarvestingScreenState extends State<PostHarvestingScreen> {
       }
     } catch (e) {
       print("Error: $e");
-      if (e == "Connection timed out") {
         String responseMessageNt = await translateToNative(
           "Service unavailable. Please try again later.",
         );
-        setState(() => responseMessage = responseMessageNt);
-        await flutterTts.speak(responseMessageNt);
-      } else {
-        String responseMessageNt = await translateToNative(
-          "Failed To Save the Events",
-        );
-        setState(() => responseMessage = responseMessageNt);
-        await flutterTts.speak(responseMessageNt);
-      }
+        final almsg = await translateToNative("Alert");
+        final okmsg = await translateToNative("ok");
+        setState(() {
+          responseMessage = null;
+        });
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Text("Alert\n($almsg)"),
+              content: Text(
+                "Service unavailable. Please try again later.\n($responseMessageNt)",
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    setState(() {
+                      cropName = null;
+                      sowingDate = null;
+                    });
+                    Navigator.of(ctx).pop();
+                  },
+                  child: Text("OK\n($okmsg)"),
+                ),
+              ],
+            ),
+          );
+          await flutterTts.speak(responseMessageNt);
+        }
+        // setState(() => responseMessage = responseMessageNt);
+        // await flutterTts.speak(responseMessageNt);
+      // if (e == "Connection timed out") {
+      // } else {
+      //   String responseMessageNt = await translateToNative(
+      //     "Failed To Save the Events",
+      //   );
+      //   setState(() => responseMessage = responseMessageNt);
+      //   await flutterTts.speak(responseMessageNt);
+      // }
     }
   }
 
@@ -437,7 +466,7 @@ class _PostHarvestingScreenState extends State<PostHarvestingScreen> {
               width: double.infinity,
               padding: EdgeInsets.symmetric(horizontal: 12, vertical: 14),
               decoration: BoxDecoration(
-                border: Border.all(color: Colors.grey),
+                border: Border.all(color: Colors.grey.withOpacity(0.2)),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Text(value.isEmpty ? '-' : value),

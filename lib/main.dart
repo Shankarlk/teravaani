@@ -43,14 +43,12 @@ class VoiceHomePage extends StatefulWidget {
   _VoiceHomePageState createState() => _VoiceHomePageState();
 }
 
-class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserver,RouteAware{
+class _VoiceHomePageState extends State<VoiceHomePage>
+    with WidgetsBindingObserver, RouteAware {
   late stt.SpeechToText _speech;
   bool _isListening = false;
-  String _text = 'Tap the mic to start speaking...';
-  String _weatherInfo = 'Weather info loading...';
   List<String> _forecast = [];
   List<String> _forecastSpeak = [];
-  String? _locationMessage;
   final FlutterTts flutterTts = FlutterTts();
   String _langCode = 'en';
   String titleText = 'Speak Now';
@@ -60,15 +58,10 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
   String weatherLabel = 'Weather';
   String forecastLabel = '7-Day Forecast';
   String recentLogsLabel = 'Recent Voice Logs';
-  bool _showTranscriptionBox = false;
-  TextEditingController _textController = TextEditingController();
-  bool _showFullForecast = false;
+  final TextEditingController _textController = TextEditingController();
   bool _speechAvailable = false;
-  String? _userDistrict;
-  String? _userState;
   bool _isLocked = false;
   bool _isPaused = false;
-  double _initialY = 0.0;
   String userId = " ";
   double _currentTemperature = 0.0;
   String _currentCondition = 'Loading...';
@@ -146,6 +139,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     await _getLocation(); // try getting location
     _speakContent();
   }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -165,7 +159,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
       // App is minimized / backgrounded
       if (_isSpeaking) {
         _flutterTts.stop();
@@ -173,7 +168,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       }
     }
   }
-  
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
@@ -250,30 +245,8 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           messageNative, // Body
           notificationDetails,
         );
-
-        // ✅ Mark reminder sent after showing the notification
         await markReminderSent(event['ID']);
         break;
-        // showDialog(
-        //   context: context,
-        //   builder: (_) => AlertDialog(
-        //     title: Text("Upcoming Event\n($alertTitleNative)"),
-        //     content: Text(
-        //       "🧾 Event: ${event['EventType']} \n( $eventLabelNative: $eventTypeNative)\n"
-        //       "📅 Date: $formattedDate \n ($dateLabelNative: $formattedDateNt)",
-        //     ),
-        //     actions: [
-        //       TextButton(
-        //         onPressed: () async {
-        //           Navigator.of(context).pop();
-        //           await markReminderSent(event['ID']);
-        //         },
-        //         child: Text("OK ($okTextNative)"),
-        //       ),
-        //     ],
-        //   ),
-        // );
-        // break;
       }
     }
   }
@@ -456,10 +429,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       final lang = savedSettings['language'];
 
       setState(() {
-        _locationMessage = "$district, $state";
         _langCode = lang;
-        _userDistrict = district;
-        _userState = state;
       });
       PageAPI.setLocation(district: district, state: state);
       PageAPI.logPageVisit("HomeScreen");
@@ -481,12 +451,9 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       await _translateUILabels();
       return;
     }
-
-    // 👇 Fallback to device location if not stored yet
     try {
       bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
       if (!serviceEnabled) {
-        setState(() => _locationMessage = "Location services disabled.");
         return;
       }
 
@@ -495,9 +462,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         permission = await Geolocator.requestPermission();
       }
       if (permission == LocationPermission.deniedForever) {
-        setState(
-          () => _locationMessage = "Location permissions permanently denied.",
-        );
         return;
       }
 
@@ -524,10 +488,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
           );
 
           setState(() {
-            _locationMessage = "$district, $state";
             _langCode = langCode;
-            _userDistrict = district;
-            _userState = state;
           });
           PageAPI.setLocation(district: district, state: state);
           PageAPI.logPageVisit("HomeScreen");
@@ -539,9 +500,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       }
     } catch (e) {
       print("❌ Error fetching location: $e");
-      setState(() {
-        _locationMessage = "Error fetching location.";
-      });
     }
   }
 
@@ -725,242 +683,146 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     userId = deviceId;
   }
 
-  void _listen() async {
-    if (!_isListening) {
-      bool available = await _speech.initialize(
-        onStatus: (status) => print("Speech status: $status"),
-        onError: (error) => print("Speech error: $error"),
+  Future<void> _getWeather(double lat, double lon) async {
+    try {
+      final url = Uri.parse(
+        'https://api.weatherapi.com/v1/forecast.json'
+        '?key=1046d3b300794f6b90e122255252909'
+        '&q=$lat,$lon'
+        '&days=1' // ✅ Only today's weather
+        '&aqi=no&alerts=no',
       );
-      if (available) {
-        await Future.delayed(Duration(milliseconds: 300));
-        setState(() => _isListening = true);
-        _speech.listen(
-          localeId: getSpeechLocale(_langCode),
-          onResult: (result) async {
-            if (result.finalResult &&
-                result.recognizedWords.trim().isNotEmpty) {
-              final nativeText = result.recognizedWords;
-              final englishText = await translateNativeToEnglish(nativeText);
 
-              setState(() {
-                _text = "$nativeText\n(English: $englishText)";
-                _textController.text +=
-                    (_textController.text.isEmpty ? '' : ' ') + nativeText;
-                _showTranscriptionBox = true;
-              });
-            } else {
-              print("🟡 No speech detected or empty result");
-            }
-          },
-        );
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        final today = data['forecast']['forecastday'][0];
+
+        final double temp = (today['day']['maxtemp_c'] as num).toDouble();
+        final int code = (today['day']['condition']['code'] as num).toInt();
+        final String condition = today['day']['condition']['text'].toString();
+
+        final String nativeCondition = await translateToNative(condition);
+
+        setState(() {
+          _currentTemperature = temp;
+          _currentCondition = condition;
+          _nativeCondition = nativeCondition;
+          _currentWeatherCode = code;
+        });
+      } else {
+        setState(() {
+          _currentCondition = 'Weather unavailable';
+          _nativeCondition = '';
+        });
       }
+    } catch (e) {
+      print("❌ Error fetching weather: $e");
+      setState(() => _currentCondition = 'Error fetching weather');
     }
   }
 
- Future<void> _getWeather(double lat, double lon) async {
-  try {
-    final url = Uri.parse(
-      'https://api.weatherapi.com/v1/forecast.json'
-      '?key=1046d3b300794f6b90e122255252909'
-      '&q=$lat,$lon'
-      '&days=7'
-      '&aqi=no&alerts=no',
-    );
-
-    final response = await http.get(url);
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-      final forecastDays = data['forecast']['forecastday'] as List;
-
-      final List dates = forecastDays.map((e) => e['date'].toString()).toList();
-      final temps = forecastDays
-          .map((e) => (e['day']['maxtemp_c'] as num).toDouble())
-          .toList();
-      final codes = forecastDays
-          .map((e) => (e['day']['condition']['code'] as num).toInt())
-          .toList();
-      final humidity = forecastDays
-          .map((e) => (e['day']['avghumidity'] as num).toDouble())
-          .toList();
-      final wind = forecastDays
-          .map((e) => (e['day']['maxwind_kph'] as num).toDouble())
-          .toList();
-      final List<String> conditions = (data['forecast']['forecastday'] as List)
-          .map((e) => e['day']['condition']['text'].toString())
-          .toList();
-
-      // --- TODAY's compact summary ---
-      final condition = conditions[0];
-      final nativeCondition = await translateToNative(condition);
-
-      setState(() {
-        _currentTemperature = temps[0];
-        _currentCondition = condition;
-        _nativeCondition = nativeCondition;
-        _currentWeatherCode = codes[0]; // new field
-      });
-
-      // --- FULL Forecast ---
-      final forecastList = await Future.wait(
-        List.generate(dates.length, (i) async {
-          final dayName = getDayNameInNative(dates[i], _langCode);
-          final nativeDesc = await translateToNative(conditions[i]);
-          final nativedayName = RegExp(r'\((.*?)\)').firstMatch(dayName)?.group(1) ?? '';
-          final englishDesc = conditions[i];
-
-            final tempVal = "${temps[i].toStringAsFixed(1)} °C";
-            final humVal = "${humidity[i].toStringAsFixed(0)} %";
-            final windVal = "${wind[i].toStringAsFixed(0)} km/h";
-
-          final temp = convertToNativeDigits(tempVal, _langCode);
-          final hum = convertToNativeDigits(humVal, _langCode);
-          final winds = convertToNativeDigits(windVal, _langCode);
-
-          final tempLabel = await translateToNative('Temperature');
-          final humLabel = await translateToNative('Humidity');
-          final windLabel = await translateToNative('Wind');
-
-          // Get icon and color for this day
-          final dayIcon = getWeatherIcon(codes[i]);
-          final dayColor = getWeatherColor(codes[i]);
-
-          return {
-            "display":
-                "$dayName: $englishDesc ($nativeDesc), "
-                "$tempLabel: $tempVal°C, "
-                "💧 Humidity ($humLabel): $humVal%, "
-                "🌬️ Wind ($windLabel): $windVal km/h",
-            "speak":
-                "$nativedayName: $nativeDesc, "
-                "$tempLabel: $temp , "
-                "$humLabel: $hum , "
-                "$windLabel: $winds ",
-            "icon": dayIcon,
-            "color": dayColor,
-          };
-        }),
-      );
-
-      setState(() {
-        _forecast = forecastList.map((e) => e['display'] as String).toList();
-        _forecastSpeak = forecastList.map((e) => e['speak'] as String).toList();
-        forecodes = codes;
-      });
-    } else {
-      setState(() {
-        _currentCondition = 'Weather unavailable';
-        _nativeCondition = '';
-      });
-    }
-  } catch (e) {
-    print("❌ Error fetching weather: $e");
-    setState(() => _currentCondition = 'Error fetching weather');
-  }
-}
-
-  
   IconData getWeatherIcon(int code) {
-    
-  switch (code) {
-    case 1000:
-      return Icons.wb_sunny; // Sunny
-    case 1003:
-      return Icons.wb_cloudy; // Partly Cloudy
-    case 1006:
-      return Icons.cloud; // Cloudy
-    case 1009:
-      return Icons.cloud; // Overcast
-    case 1030:
-      return FontAwesomeIcons.smog; // Mist
-    case 1063:
-      return FontAwesomeIcons.cloudSunRain; // Patchy Rain
-    case 1066:
-      return FontAwesomeIcons.snowflake; // Snow Showers
-    case 1069:
-      return FontAwesomeIcons.snowflake; // Snow Showers
-    case 1072:
-      return FontAwesomeIcons.snowflake; // Freezing Drizzle
-    case 1087:
-      return FontAwesomeIcons.cloudBolt; // Thunderstorms
-    case 1114:
-      return FontAwesomeIcons.snowflake; // Snow Showers
-    case 1117:
-      return FontAwesomeIcons.snowflake; // Snow Showers
-    case 1135:
-      return FontAwesomeIcons.smog; // Mist
-    case 1147:
-      return FontAwesomeIcons.smog; // Fog
-    case 1150:
-      return FontAwesomeIcons.cloudRain; // Light Drizzle
-    case 1153:
-      return FontAwesomeIcons.cloudRain; // Light Drizzle
-    case 1168:
-      return FontAwesomeIcons.cloudRain; // Light Drizzle
-    case 1171:
-      return FontAwesomeIcons.cloudRain; // Light Drizzle
-    case 1180:
-      return FontAwesomeIcons.cloudRain; // Light Rain
-    case 1183:
-      return FontAwesomeIcons.cloudRain; // Light Rain
-    case 1186:
-      return FontAwesomeIcons.cloudRain; // Light Rain
-    case 1189:
-      return FontAwesomeIcons.cloudRain; // Light Rain
-    case 1192:
-      return FontAwesomeIcons.cloudRain; // Moderate Rain
-    case 1195:
-      return FontAwesomeIcons.cloudRain; // Moderate Rain
-    case 1198:
-      return FontAwesomeIcons.cloudRain; // Moderate Rain
-    case 1201:
-      return FontAwesomeIcons.cloudRain; // Heavy Rain
-    case 1204:
-      return FontAwesomeIcons.cloudRain; // Heavy Rain
-    case 1207:
-      return FontAwesomeIcons.cloudRain; // Freezing Rain
-    case 1210:
-      return FontAwesomeIcons.snowflake; // Light Snow
-    case 1213:
-      return FontAwesomeIcons.snowflake; // Light Snow
-    case 1216:
-      return FontAwesomeIcons.snowflake; // Light Snow
-    case 1219:
-      return FontAwesomeIcons.snowflake; // Light Snow
-    case 1222:
-      return FontAwesomeIcons.snowflake; // Light Snow
-    case 1225:
-      return FontAwesomeIcons.snowflake; // Light Snow
-    case 1237:
-      return FontAwesomeIcons.snowflake; // Light Snow
-    case 1240:
-      return FontAwesomeIcons.cloudRain; // Light Rain
-    case 1243:
-      return FontAwesomeIcons.cloudRain; // Light Rain
-    case 1246:
-      return FontAwesomeIcons.cloudRain; // Light Rain
-    case 1249:
-      return FontAwesomeIcons.snowflake; // Light Snow
-    case 1252:
-      return FontAwesomeIcons.snowflake; // Light Snow
-    case 1255:
-      return FontAwesomeIcons.snowflake; // Light Snow
-    case 1258:
-      return FontAwesomeIcons.snowflake; // Light Snow
-    case 1261:
-      return FontAwesomeIcons.snowflake; // Light Snow
-    case 1264:
-      return FontAwesomeIcons.snowflake; // Light Snow
-    case 1273:
-      return FontAwesomeIcons.cloudBolt; // Thunderstorms
-    case 1276:
-      return FontAwesomeIcons.cloudBolt; // Thunderstorms
-    case 1279:
-      return FontAwesomeIcons.cloudBolt; // Thunderstorms
-    case 1282:
-      return FontAwesomeIcons.cloudBolt; // Thunderstorms
-    default:
-      return Icons.help_outline; // Default icon for unknown codes
-  }
+    switch (code) {
+      case 1000:
+        return Icons.wb_sunny; // Sunny
+      case 1003:
+        return Icons.wb_cloudy; // Partly Cloudy
+      case 1006:
+        return Icons.cloud; // Cloudy
+      case 1009:
+        return Icons.cloud; // Overcast
+      case 1030:
+        return FontAwesomeIcons.smog; // Mist
+      case 1063:
+        return FontAwesomeIcons.cloudSunRain; // Patchy Rain
+      case 1066:
+        return FontAwesomeIcons.snowflake; // Snow Showers
+      case 1069:
+        return FontAwesomeIcons.snowflake; // Snow Showers
+      case 1072:
+        return FontAwesomeIcons.snowflake; // Freezing Drizzle
+      case 1087:
+        return FontAwesomeIcons.cloudBolt; // Thunderstorms
+      case 1114:
+        return FontAwesomeIcons.snowflake; // Snow Showers
+      case 1117:
+        return FontAwesomeIcons.snowflake; // Snow Showers
+      case 1135:
+        return FontAwesomeIcons.smog; // Mist
+      case 1147:
+        return FontAwesomeIcons.smog; // Fog
+      case 1150:
+        return FontAwesomeIcons.cloudRain; // Light Drizzle
+      case 1153:
+        return FontAwesomeIcons.cloudRain; // Light Drizzle
+      case 1168:
+        return FontAwesomeIcons.cloudRain; // Light Drizzle
+      case 1171:
+        return FontAwesomeIcons.cloudRain; // Light Drizzle
+      case 1180:
+        return FontAwesomeIcons.cloudRain; // Light Rain
+      case 1183:
+        return FontAwesomeIcons.cloudRain; // Light Rain
+      case 1186:
+        return FontAwesomeIcons.cloudRain; // Light Rain
+      case 1189:
+        return FontAwesomeIcons.cloudRain; // Light Rain
+      case 1192:
+        return FontAwesomeIcons.cloudRain; // Moderate Rain
+      case 1195:
+        return FontAwesomeIcons.cloudRain; // Moderate Rain
+      case 1198:
+        return FontAwesomeIcons.cloudRain; // Moderate Rain
+      case 1201:
+        return FontAwesomeIcons.cloudRain; // Heavy Rain
+      case 1204:
+        return FontAwesomeIcons.cloudRain; // Heavy Rain
+      case 1207:
+        return FontAwesomeIcons.cloudRain; // Freezing Rain
+      case 1210:
+        return FontAwesomeIcons.snowflake; // Light Snow
+      case 1213:
+        return FontAwesomeIcons.snowflake; // Light Snow
+      case 1216:
+        return FontAwesomeIcons.snowflake; // Light Snow
+      case 1219:
+        return FontAwesomeIcons.snowflake; // Light Snow
+      case 1222:
+        return FontAwesomeIcons.snowflake; // Light Snow
+      case 1225:
+        return FontAwesomeIcons.snowflake; // Light Snow
+      case 1237:
+        return FontAwesomeIcons.snowflake; // Light Snow
+      case 1240:
+        return FontAwesomeIcons.cloudRain; // Light Rain
+      case 1243:
+        return FontAwesomeIcons.cloudRain; // Light Rain
+      case 1246:
+        return FontAwesomeIcons.cloudRain; // Light Rain
+      case 1249:
+        return FontAwesomeIcons.snowflake; // Light Snow
+      case 1252:
+        return FontAwesomeIcons.snowflake; // Light Snow
+      case 1255:
+        return FontAwesomeIcons.snowflake; // Light Snow
+      case 1258:
+        return FontAwesomeIcons.snowflake; // Light Snow
+      case 1261:
+        return FontAwesomeIcons.snowflake; // Light Snow
+      case 1264:
+        return FontAwesomeIcons.snowflake; // Light Snow
+      case 1273:
+        return FontAwesomeIcons.cloudBolt; // Thunderstorms
+      case 1276:
+        return FontAwesomeIcons.cloudBolt; // Thunderstorms
+      case 1279:
+        return FontAwesomeIcons.cloudBolt; // Thunderstorms
+      case 1282:
+        return FontAwesomeIcons.cloudBolt; // Thunderstorms
+      default:
+        return Icons.help_outline; // Default icon for unknown codes
+    }
     // if (code == 0) return Icons.wb_sunny;
     // if (code == 1 || code == 2) return Icons.wb_cloudy;
     // if (code == 3) return Icons.cloud;
@@ -1129,26 +991,6 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
     return '$english ($native)';
   }
 
-  Future<void> _speakVisibleText() async {
-    final buffer = StringBuffer();
-
-    if (_locationMessage != null) buffer.writeln(_locationMessage);
-    buffer.writeln(_weatherInfo);
-    for (final line in _forecast) buffer.writeln(line);
-    buffer.writeln(
-      titleText.split('\n').last,
-    ); // Only translated   emulator -avd Pixel_7a
-
-    final db = await DatabaseHelper().db;
-    final logs = await db.query('voice_logs', orderBy: 'id DESC', limit: 5);
-    for (final log in logs) {
-      buffer.writeln(log['query']);
-    }
-
-    await flutterTts.setLanguage(_langCode);
-    await flutterTts.speak(buffer.toString());
-  }
-
   void _startListening() async {
     final micStatus = await Permission.microphone.status;
     if (!micStatus.isGranted) {
@@ -1172,11 +1014,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         onResult: (result) async {
           if (result.recognizedWords.trim().isNotEmpty) {
             final nativeText = result.recognizedWords;
-            final englishText = await translateNativeToEnglish(nativeText);
             setState(() {
-              _text =
-                  "$nativeText\n(English: $englishText)"; // Update main display
-              // Append recognized words to the text controller
               if (_textController.text.isEmpty) {
                 _textController.text = nativeText;
               } else {
@@ -1185,10 +1023,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
             });
           }
         },
-        onSoundLevelChange: (level) {
-          // Optional: Implement a visualizer for sound level if desired
-          // print("Sound level: $level");
-        },
+        onSoundLevelChange: (level) {},
       );
     } else if (_speech.isListening) {
       print("Already listening, no need to start again.");
@@ -1207,101 +1042,99 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
       _isListening = false;
       _isLocked = false; // Always unlock when explicitly stopping
       _isPaused = false; // Always unpause when explicitly stopping
-      _text = 'Tap the mic to start speaking...'; // Reset prompt
     });
   }
 
   Color getWeatherColor(int code) {
-    
-  switch (code) {
-    // Sunny
-    case 1000:
-      return Colors.orange;
+    switch (code) {
+      // Sunny
+      case 1000:
+        return Colors.orange;
 
-    // Partly Cloudy
-    case 1003:
-      return Colors.grey.shade400;
+      // Partly Cloudy
+      case 1003:
+        return Colors.grey.shade400;
 
-    // Cloudy / Overcast
-    case 1006:
-    case 1009:
-      return Colors.grey.shade500;
+      // Cloudy / Overcast
+      case 1006:
+      case 1009:
+        return Colors.grey.shade500;
 
-    // Mist / Fog / Haze
-    case 1030:
-    case 1135:
-    case 1147:
-      return Colors.brown;
+      // Mist / Fog / Haze
+      case 1030:
+      case 1135:
+      case 1147:
+        return Colors.brown;
 
-    // Patchy Rain / Light Drizzle / Light Rain
-    case 1063:
-    case 1150:
-    case 1153:
-    case 1168:
-    case 1171:
-    case 1180:
-    case 1183:
-      return Colors.lightBlue;
+      // Patchy Rain / Light Drizzle / Light Rain
+      case 1063:
+      case 1150:
+      case 1153:
+      case 1168:
+      case 1171:
+      case 1180:
+      case 1183:
+        return Colors.lightBlue;
 
-    // Moderate Rain
-    case 1186:
-    case 1189:
-    case 1192:
-    case 1195:
-      return Colors.blue;
+      // Moderate Rain
+      case 1186:
+      case 1189:
+      case 1192:
+      case 1195:
+        return Colors.blue;
 
-    // Heavy Rain / Freezing Rain
-    case 1201:
-    case 1204:
-    case 1207:
-    case 1240:
-    case 1243:
-    case 1246:
-      return const Color.fromARGB(255, 28, 38, 99);
+      // Heavy Rain / Freezing Rain
+      case 1201:
+      case 1204:
+      case 1207:
+      case 1240:
+      case 1243:
+      case 1246:
+        return const Color.fromARGB(255, 28, 38, 99);
 
-    // Snow / Sleet / Light Snow
-    case 1066:
-    case 1069:
-    case 1072:
-    case 1114:
-    case 1117:
-    case 1210:
-    case 1213:
-    case 1216:
-    case 1219:
-    case 1222:
-    case 1225:
-    case 1237:
-    case 1249:
-    case 1252:
-    case 1255:
-    case 1258:
-    case 1261:
-    case 1264:
-      return const Color.fromARGB(255, 118, 176, 184);
+      // Snow / Sleet / Light Snow
+      case 1066:
+      case 1069:
+      case 1072:
+      case 1114:
+      case 1117:
+      case 1210:
+      case 1213:
+      case 1216:
+      case 1219:
+      case 1222:
+      case 1225:
+      case 1237:
+      case 1249:
+      case 1252:
+      case 1255:
+      case 1258:
+      case 1261:
+      case 1264:
+        return const Color.fromARGB(255, 118, 176, 184);
 
-    // Thunderstorms
-    case 1087:
-    case 1273:
-    case 1276:
-    case 1279:
-    case 1282:
-      return Colors.deepPurple;
+      // Thunderstorms
+      case 1087:
+      case 1273:
+      case 1276:
+      case 1279:
+      case 1282:
+        return Colors.deepPurple;
 
-    // Default / unknown
-    default:
-      return Colors.black;
+      // Default / unknown
+      default:
+        return Colors.black;
+    }
+    // if (code == 0) return Colors.orange; // ☀️ Sunny
+    // if (code == 1 || code == 2 || code == 3) return const Color.fromARGB(255, 212, 204, 204); // ☁️ Cloudy
+    // if (code >= 45 && code <= 48) return Colors.brown; // 🌫️ Fog
+    // if (code >= 51 && code <= 55) return Colors.lightBlue; // 🌦️ Light rain
+    // if (code >= 61 && code <= 65) return Colors.blue; // 🌧️ Rain
+    // if (code >= 71 && code <= 75) return const Color.fromARGB(255, 118, 176, 184); // ❄️ Snow
+    // if (code >= 80 && code <= 82) return const Color.fromARGB(255, 28, 38, 99); // 🌧️ Heavy rain
+    // if (code == 95 || code == 96 || code == 99) return Colors.deepPurple; // ⛈️ Thunderstorm
+    // return Colors.black; // default / unknown
   }
-  // if (code == 0) return Colors.orange; // ☀️ Sunny
-  // if (code == 1 || code == 2 || code == 3) return const Color.fromARGB(255, 212, 204, 204); // ☁️ Cloudy
-  // if (code >= 45 && code <= 48) return Colors.brown; // 🌫️ Fog
-  // if (code >= 51 && code <= 55) return Colors.lightBlue; // 🌦️ Light rain
-  // if (code >= 61 && code <= 65) return Colors.blue; // 🌧️ Rain
-  // if (code >= 71 && code <= 75) return const Color.fromARGB(255, 118, 176, 184); // ❄️ Snow
-  // if (code >= 80 && code <= 82) return const Color.fromARGB(255, 28, 38, 99); // 🌧️ Heavy rain
-  // if (code == 95 || code == 96 || code == 99) return Colors.deepPurple; // ⛈️ Thunderstorm
-  // return Colors.black; // default / unknown
-}
 
   // 1️⃣ Add these variables in your State class
   bool _isSpeaking = false;
@@ -1343,18 +1176,12 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         },
       );
     }
+
     bool isLoading =
         _todayWeatherTitleNative.isEmpty ||
         _currentTemperature == 0.0 ||
         lblcroptitleNative.isEmpty ||
         lblmarkettitleNative.isEmpty;
-
-    if (isLoading) {
-      return const Scaffold(
-        backgroundColor: Colors.white,
-        body: Center(child: CircularProgressIndicator(color: Colors.blue)),
-      );
-    }
 
     return Scaffold(
       backgroundColor: Colors.white,
@@ -1368,8 +1195,7 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
               height: 50,
               fit: BoxFit.contain,
             ),
-            const SizedBox(width: 5), // space between logo and text
-            // 📝 App Name
+            const SizedBox(width: 5),
             const Text(
               "Teravaani",
               style: TextStyle(
@@ -1382,254 +1208,275 @@ class _VoiceHomePageState extends State<VoiceHomePage> with WidgetsBindingObserv
         ),
         centerTitle: true,
       ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 🌤️ Weather Card
-            GestureDetector(
-              onTap: () {
-                _flutterTts.stop();
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => WeatherScreen(
-                      forecastDisplay: _forecast,
-                      forecastSpeak: _forecastSpeak,
-                      forecastCodes: forecodes,
-                      targetLangCode: _langCode,
-                    ),
-                  ),
-                );
-              },
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: const Color.fromARGB(255, 253, 253, 251),
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.withOpacity(0.2),
-                      blurRadius: 6,
-                      offset: const Offset(0, 4),
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.center,
-                  children: [
-                    Text(
-                      "Today's Weather\n($_todayWeatherTitleNative)",
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 12),
 
-                    // Row: Thermometer + Temp + Condition + Weather Icon
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        Icon(
-                          getWeatherIcon(_currentWeatherCode),
-                          size: 60,
-                          color: getWeatherColor(_currentWeatherCode),
+      body: Stack(
+        children: [
+          // ✅ Main content
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // 🌤️ Weather Card
+                GestureDetector(
+                  onTap: () {
+                    _flutterTts.stop();
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => WeatherScreen(
+                          forecastDisplay: _forecast,
+                          forecastSpeak: _forecastSpeak,
+                          forecastCodes: forecodes,
+                          targetLangCode: _langCode,
                         ),
-                        const SizedBox(width: 8),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.center,
+                      ),
+                    );
+                  },
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: const Color.fromARGB(255, 253, 253, 251),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.withOpacity(0.2),
+                          blurRadius: 6,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.center,
+                      children: [
+                        Text(
+                          "Today's Weather\n($_todayWeatherTitleNative)",
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(
-                              "$_currentTemperature°C",
-                              style: const TextStyle(
-                                fontSize: 23,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black,
-                              ),
+                            Icon(
+                              getWeatherIcon(_currentWeatherCode),
+                              size: 60,
+                              color: getWeatherColor(_currentWeatherCode),
                             ),
-                            const SizedBox(height: 4),
-                            SizedBox(
-                              width: 100,
-                              child: Text(
-                                "$_currentCondition\n($_nativeCondition)",
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.black87,
+                            const SizedBox(width: 8),
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                Text(
+                                  "$_currentTemperature°C",
+                                  style: const TextStyle(
+                                    fontSize: 23,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.black,
+                                  ),
                                 ),
-                              ),
+                                const SizedBox(height: 4),
+                                SizedBox(
+                                  width: 100,
+                                  child: Text(
+                                    "$_currentCondition\n($_nativeCondition)",
+                                    textAlign: TextAlign.center,
+                                    style: const TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.black87,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),
                       ],
                     ),
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 20),
-
-            // 🌱 Crop Management Card
-            GestureDetector(
-              onTap: () {
-                _flutterTts.stop();
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (_) => CropManagementScreen(langCode: _langCode),
                   ),
-                );
-              },
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade100,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.shade300,
-                      blurRadius: 4,
-                      offset: const Offset(2, 2),
-                    ),
-                  ],
                 ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.green,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        FontAwesomeIcons.leaf,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      "Crop Management\n($lblcroptitleNative)",
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-            ),
 
-            const SizedBox(height: 20),
+                const SizedBox(height: 20),
 
-            // 📈 Market Rates Card
-            GestureDetector(
-              onTap: () async {
-                Position position = await Geolocator.getCurrentPosition();
-                List<Placemark> placemarks = await placemarkFromCoordinates(
-                  position.latitude,
-                  position.longitude,
-                );
-                final place = placemarks.first;
-                final district = place.subAdministrativeArea ?? '';
-                final state = place.administrativeArea ?? '';
-                _flutterTts.stop();
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => MarketPriceScreen(
-                      userDistrict: district,
-                      userState: state,
+                // 🌱 Crop Management Card
+                GestureDetector(
+                  onTap: () {
+                    _flutterTts.stop();
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            CropManagementScreen(langCode: _langCode),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.shade300,
+                          blurRadius: 4,
+                          offset: const Offset(2, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.green,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            FontAwesomeIcons.leaf,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          "Crop Management\n($lblcroptitleNative)",
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
                     ),
                   ),
-                );
-              },
-              child: Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade100,
-                  borderRadius: BorderRadius.circular(12),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.grey.shade300,
-                      blurRadius: 4,
-                      offset: const Offset(2, 2),
-                    ),
-                  ],
                 ),
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    Container(
-                      padding: const EdgeInsets.all(12),
-                      decoration: BoxDecoration(
-                        color: Colors.blue,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: const Icon(
-                        FontAwesomeIcons.chartLine,
-                        color: Colors.white,
-                        size: 28,
-                      ),
-                    ),
-                    const SizedBox(height: 8),
-                    Text(
-                      "Market Rates\n($lblmarkettitleNative)",
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 14,
-                      ),
-                      textAlign: TextAlign.center,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
 
-      // 🎤 Floating Mic Button
-      floatingActionButton: Row(
-        mainAxisAlignment: MainAxisAlignment.end, // Align to bottom-right
-        children: [
-          // 🔊 Speaker Button
-          FloatingActionButton(
-            heroTag: "speaker",
-            onPressed: _speakContent,
-            backgroundColor: _isSpeaking ? Colors.grey : Colors.blue,
-            child: Icon(
-              _isSpeaking ? Icons.pause : Icons.volume_up,
-              color: Colors.white,
+                const SizedBox(height: 20),
+
+                // 📈 Market Rates Card
+                GestureDetector(
+                  onTap: () async {
+                    Position position = await Geolocator.getCurrentPosition();
+                    List<Placemark> placemarks = await placemarkFromCoordinates(
+                      position.latitude,
+                      position.longitude,
+                    );
+                    final place = placemarks.first;
+                    final district = place.subAdministrativeArea ?? '';
+                    final state = place.administrativeArea ?? '';
+                    _flutterTts.stop();
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => MarketPriceScreen(
+                          userDistrict: district,
+                          userState: state,
+                        ),
+                      ),
+                    );
+                  },
+                  child: Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      color: Colors.blue.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.grey.shade300,
+                          blurRadius: 4,
+                          offset: const Offset(2, 2),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Container(
+                          padding: const EdgeInsets.all(12),
+                          decoration: BoxDecoration(
+                            color: Colors.blue,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: const Icon(
+                            FontAwesomeIcons.chartLine,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          "Market Rates\n($lblmarkettitleNative)",
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
-          const SizedBox(width: 16), // Some left padding
-          // 🎤 Mic Button
-          FloatingActionButton(
-            heroTag: "mic",
-            onPressed: () {
-                _flutterTts.stop();
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      QueryResponseScreen(initialLangCode: _langCode),
+
+          // ✅ Floating Mic + Speaker buttons inside the Stack
+          Positioned(
+            bottom: 16,
+            right: 16,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                FloatingActionButton(
+                  heroTag: "speaker",
+                  onPressed: _speakContent,
+                  backgroundColor: _isSpeaking ? Colors.grey : Colors.blue,
+                  child: Icon(
+                    _isSpeaking ? Icons.pause : Icons.volume_up,
+                    color: Colors.white,
+                  ),
                 ),
-              );
-            },
-            backgroundColor: Colors.green,
-            child: const Icon(Icons.mic, color: Colors.white),
-          ), // Space between buttons
+                const SizedBox(width: 16),
+                FloatingActionButton(
+                  heroTag: "mic",
+                  onPressed: () {
+                    _flutterTts.stop();
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) =>
+                            QueryResponseScreen(initialLangCode: _langCode),
+                      ),
+                    );
+                  },
+                  backgroundColor: Colors.green,
+                  child: const Icon(Icons.mic, color: Colors.white),
+                ),
+              ],
+            ),
+          ),
+
+          // ✅ Blur overlay on top of everything (including FABs)
+          if (isLoading)
+            Positioned.fill(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+                child: Container(
+                  color: Colors.black.withOpacity(0.2),
+                  child: const Center(
+                    child: CircularProgressIndicator(color: Colors.blue),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

@@ -287,9 +287,33 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> with RouteAware {
       }
     } catch (e) {
       print("Error fetching history: $e");
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text("Failed to load history")));
+        String responseMessageNt = await _translateToNativeLanguage(
+          "Service unavailable. Please try again later.", targetLangCode
+        );
+        final almsg = await _translateToNativeLanguage("Alert", targetLangCode);
+        final okmsg = await _translateToNativeLanguage("ok", targetLangCode);
+        setState(() {
+        });
+        if (mounted) {
+          showDialog(
+            context: context,
+            builder: (ctx) => AlertDialog(
+              title: Text("Alert\n($almsg)"),
+              content: Text(
+                "Service unavailable. Please try again later.\n($responseMessageNt)",
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () {
+                    Navigator.of(ctx).pop();
+                  },
+                  child: Text("OK\n($okmsg)"),
+                ),
+              ],
+            ),
+          );
+          await flutterTts.speak(responseMessageNt);
+        }
     }
     _prepareLatestRecordForSpeech();
   }
@@ -447,7 +471,7 @@ Future<void> _speakLatestRecord() async {
       body: Stack(
         children: [
           _history.isEmpty
-              ? const Center(child: Text("No history found."))
+              ? const Center(child: Text("No Records found."))
               : Padding(
                   padding: const EdgeInsets.all(8.0),
                   child: ListView.builder(

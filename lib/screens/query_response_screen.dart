@@ -465,7 +465,7 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
                     });
                     final id = await getOrCreateDeviceId();
                     _pendingCropName = cropName;
-                    Navigator.push(
+                    Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
                         builder: (context) => CalendarScreen(
@@ -502,7 +502,7 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
                     setState(() {
                       _isListening = false;
                     });
-                    Navigator.push(
+                    Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
                         builder: (context) => CropPreparationScreen(
@@ -539,7 +539,7 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
                     setState(() {
                       _isListening = false;
                     });
-                    Navigator.push(
+                    Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
                         builder: (context) =>
@@ -583,7 +583,7 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
                     final district = place.subAdministrativeArea ?? '';
                     final state = place.administrativeArea ?? '';
 
-                    Navigator.push(
+                    Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
                         builder: (context) => MarketPriceScreen(
@@ -649,7 +649,7 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
                     setState(() {
                       _isListening = false;
                     });
-                    Navigator.push(
+                    Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
                         builder: (context) =>
@@ -684,7 +684,7 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
                     setState(() {
                       _isListening = false;
                     });
-                    Navigator.push(
+                    Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
                         builder: (context) =>
@@ -837,7 +837,7 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
       final district = savedSettings['district'];
       final lang = savedSettings['language'];
       PageAPI.setLocation(district: district, state: state);
-      PageAPI.logPageVisit("HomeScreen");
+      // PageAPI.logPageVisit("HomeScreen");
 
       try {
         final locations = await locationFromAddress("$district, $state");
@@ -1024,7 +1024,7 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
         }),
       );
 
-      Navigator.push(
+      Navigator.pushReplacement(
         context,
         MaterialPageRoute(
           builder: (context) => WeatherScreen(
