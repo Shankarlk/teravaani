@@ -5,6 +5,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:teravaani/screens/CropManagementScreen.dart';
 import 'package:uuid/uuid.dart';
 import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 import './capture_screen.dart';
@@ -35,7 +36,7 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> with RouteAware {
   String lblDiagnosis = 'Diagnose Plant';
   List<dynamic> _history = [];
   bool _isSpeaking = false;
-  String? _latestRecordText; 
+  String? _latestRecordText;
   Future<void> _pickImageAndNavigate(ImageSource source) async {
     final picker = ImagePicker();
     final picked = await picker.pickImage(source: source);
@@ -46,20 +47,21 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> with RouteAware {
       });
 
       final prediction = await _sendImageAndGetResponse(File(picked.path));
-
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (_) => CaptureScreen(
-            targetLangCode: targetLangCode,
-            existingRecord: prediction,
-            localImageFile: File(picked.path), // 👈 new param
-            predictionFailed: prediction == null, // 👈 new param
+      if (prediction != null) {
+        Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => CaptureScreen(
+              targetLangCode: targetLangCode,
+              existingRecord: prediction,
+              localImageFile: File(picked.path), // 👈 new param
+              predictionFailed: prediction == null, // 👈 new param
+            ),
           ),
-        ),
-      ).then((_) {
-        _loadHistory();
-      });
+        ).then((_) {
+          _loadHistory();
+        });
+      }
 
       setState(() {
         _isLoading = false;
@@ -82,21 +84,53 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> with RouteAware {
       if (response.statusCode == 200) {
         final jsonData = json.decode(result);
         _loadHistory();
+        print("Prediction image: $jsonData['imageUrl']");
         return {
           'label': jsonData['label'],
           'confidence': jsonData['confidence'],
           'imageUrl': jsonData['imageUrl'],
           'response': jsonData,
         };
-        print("Prediction image: $jsonData['imageUrl']");
       } else {
         _loadHistory();
         print("Prediction failed: $result");
+        _showServiceUnavailableDialog();
         return null;
       }
     } catch (e) {
       print("Error in prediction: $e");
+      _showServiceUnavailableDialog();
       return null;
+    }
+  }
+
+  /// Show AlertDialog for Service Unavailable
+  Future<void> _showServiceUnavailableDialog() async {
+    final msg = await _translateToNativeLanguage(
+      "Service unavailable. Please try again later.",
+      targetLangCode,
+    );
+    final almsg = await _translateToNativeLanguage("Alert", targetLangCode);
+    final okmsg = await _translateToNativeLanguage("OK", targetLangCode);
+
+    if (mounted) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text("Alert\n($almsg)"),
+          content: Text("Service unavailable. Please try again later.\n($msg)"),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+              },
+              child: Text("OK\n($okmsg)"),
+            ),
+          ],
+        ),
+      );
+
+      await flutterTts.speak(msg);
     }
   }
 
@@ -113,45 +147,47 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> with RouteAware {
   }
 
   void _prepareLatestRecordForSpeech() async {
-  if (_history.isNotEmpty) {
-    String allText = "";
+    if (_history.isNotEmpty) {
+      String allText = "";
 
-    for (var record in _history) {
-      final label = record['label'] ?? 'Unknown';
-      final confidence = (record['confidence'] ?? 0.0) * 100;
+      for (var record in _history) {
+        final label = record['label'] ?? 'Unknown';
+        final confidence = (record['confidence'] ?? 0.0) * 100;
 
-      String englishText = "$label";
+        String englishText = "$label";
 
-      String nativeText = "";
-      try {
-        nativeText = await _withNativeTranslation(label, targetLangCode);
-        // Only show native text if chemical or organic list is not empty
-        final responseJson = record['response'] is String
-            ? json.decode(record['response'])
-            : record['response'] ?? {};
+        String nativeText = "";
+        try {
+          nativeText = await _withNativeTranslation(label, targetLangCode);
+          // Only show native text if chemical or organic list is not empty
+          final responseJson = record['response'] is String
+              ? json.decode(record['response'])
+              : record['response'] ?? {};
 
-        final chemicalProducts = List<Map<String, dynamic>>.from(
-            responseJson['chemical_products'] ?? []);
-        final organicTreatments =
-            List<String>.from(responseJson['organic_treatments'] ?? []);
+          final chemicalProducts = List<Map<String, dynamic>>.from(
+            responseJson['chemical_products'] ?? [],
+          );
+          final organicTreatments = List<String>.from(
+            responseJson['organic_treatments'] ?? [],
+          );
 
-        if (chemicalProducts.isNotEmpty || organicTreatments.isNotEmpty) {
-          englishText += "\n($nativeText)";
+          if (chemicalProducts.isNotEmpty || organicTreatments.isNotEmpty) {
+            englishText += "\n($nativeText)";
+          }
+        } catch (e) {
+          print("Translation failed: $e");
         }
-      } catch (e) {
-        print("Translation failed: $e");
+
+        allText += "$englishText\n\n"; // separate each record
       }
 
-      allText += "$englishText\n\n"; // separate each record
+      setState(() {
+        _latestRecordText = allText.trim();
+      });
+    } else {
+      _latestRecordText = null;
     }
-
-    setState(() {
-      _latestRecordText = allText.trim();
-    });
-  } else {
-    _latestRecordText = null;
   }
-}
 
   @override
   void didChangeDependencies() {
@@ -174,42 +210,38 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> with RouteAware {
     _loadHistory();
   }
 
-  Future<void> _sendImageForPrediction(File imageFile) async {
-    final uri = Uri.parse(
-      'http://172.20.10.5:3000/predict',
-    ); // Replace with your IP
-    final deviceId = await getOrCreateDeviceId();
-    final request = http.MultipartRequest('POST', uri)
-      ..files.add(await http.MultipartFile.fromPath('image', imageFile.path))
-      ..fields['deviceId'] = deviceId;
-
-    final response = await request.send();
-    final result = await response.stream.bytesToString();
-    print('response image:- ${result}');
-    final jsonData = json.decode(result);
-    final label = jsonData['label'];
-    final confidence = (jsonData['confidence'] * 100).toStringAsFixed(2);
-
-    final spoken =
-        "I think your plant has $label with $confidence percent confidence";
-
-    setState(() {
-      _diagnosis = "$label (Confidence: $confidence%)";
-      _symptoms = jsonData['symptoms'];
-      _chemicalProducts = jsonData['chemical_products'];
-      _organicTreatments = jsonData['organic_treatments'];
-      _isLoading = false;
-    });
-
-    await _saveToHistory(_diagnosis!);
-    await _speakFullResult(
-      _diagnosis ?? "No diagnosis found",
-      _symptoms ?? "No symptoms available",
-      (_chemicalProducts ?? []).cast<Map<String, String>>(),
-      (_organicTreatments ?? []).cast<String>(),
-      targetLangCode,
-    );
-  }
+  // Future<void> _sendImageForPrediction(File imageFile) async {
+  //   final uri = Uri.parse(
+  //     'http://172.20.10.5:3000/predict',
+  //   ); // Replace with your IP
+  //   final deviceId = await getOrCreateDeviceId();
+  //   final request = http.MultipartRequest('POST', uri)
+  //     ..files.add(await http.MultipartFile.fromPath('image', imageFile.path))
+  //     ..fields['deviceId'] = deviceId;
+  //   final response = await request.send();
+  //   final result = await response.stream.bytesToString();
+  //   print('response image:- ${result}');
+  //   final jsonData = json.decode(result);
+  //   final label = jsonData['label'];
+  //   final confidence = (jsonData['confidence'] * 100).toStringAsFixed(2);
+  //   final spoken =
+  //       "I think your plant has $label with $confidence percent confidence";
+  //   setState(() {
+  //     _diagnosis = "$label (Confidence: $confidence%)";
+  //     _symptoms = jsonData['symptoms'];
+  //     _chemicalProducts = jsonData['chemical_products'];
+  //     _organicTreatments = jsonData['organic_treatments'];
+  //     _isLoading = false;
+  //   });
+  //   await _saveToHistory(_diagnosis!);
+  //   await _speakFullResult(
+  //     _diagnosis ?? "No diagnosis found",
+  //     _symptoms ?? "No symptoms available",
+  //     (_chemicalProducts ?? []).cast<Map<String, String>>(),
+  //     (_organicTreatments ?? []).cast<String>(),
+  //     targetLangCode,
+  //   );
+  // }
 
   Future<String> _translateToNativeLanguage(
     String text,
@@ -287,33 +319,33 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> with RouteAware {
       }
     } catch (e) {
       print("Error fetching history: $e");
-        String responseMessageNt = await _translateToNativeLanguage(
-          "Service unavailable. Please try again later.", targetLangCode
-        );
-        final almsg = await _translateToNativeLanguage("Alert", targetLangCode);
-        final okmsg = await _translateToNativeLanguage("ok", targetLangCode);
-        setState(() {
-        });
-        if (mounted) {
-          showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: Text("Alert\n($almsg)"),
-              content: Text(
-                "Service unavailable. Please try again later.\n($responseMessageNt)",
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    Navigator.of(ctx).pop();
-                  },
-                  child: Text("OK\n($okmsg)"),
-                ),
-              ],
+      String responseMessageNt = await _translateToNativeLanguage(
+        "Service unavailable. Please try again later.",
+        targetLangCode,
+      );
+      final almsg = await _translateToNativeLanguage("Alert", targetLangCode);
+      final okmsg = await _translateToNativeLanguage("ok", targetLangCode);
+      setState(() {});
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text("Alert\n($almsg)"),
+            content: Text(
+              "Service unavailable. Please try again later.\n($responseMessageNt)",
             ),
-          );
-          await flutterTts.speak(responseMessageNt);
-        }
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.of(ctx).pop();
+                },
+                child: Text("OK\n($okmsg)"),
+              ),
+            ],
+          ),
+        );
+        await flutterTts.speak(responseMessageNt);
+      }
     }
     _prepareLatestRecordForSpeech();
   }
@@ -392,8 +424,14 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> with RouteAware {
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
       ConnectivityResult result,
     ) {
+      bool hasInternet = result != ConnectivityResult.none;
+
+      if (!hasInternet && mounted) {
+        _showNoInternetDialog();
+      }
+
       setState(() {
-        _hasInternet = result != ConnectivityResult.none;
+        _hasInternet = hasInternet;
       });
     });
     PageAPI.logPageVisit("DiagnosisHistoryScreen");
@@ -401,9 +439,45 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> with RouteAware {
 
   Future<void> _checkInternetConnection() async {
     final connectivityResult = await Connectivity().checkConnectivity();
+    bool hasInternet = connectivityResult != ConnectivityResult.none;
+
+    if (!hasInternet && mounted) {
+      _showNoInternetDialog();
+    }
+
     setState(() {
-      _hasInternet = connectivityResult != ConnectivityResult.none;
+      _hasInternet = hasInternet;
     });
+  }
+
+  void _showNoInternetDialog() async {
+    final msg = await _translateToNativeLanguage(
+      "No Internet Connection. Please check your connection and try again.",
+      targetLangCode,
+    );
+    final almsg = await _translateToNativeLanguage("Alert", targetLangCode);
+    final okmsg = await _translateToNativeLanguage("OK", targetLangCode);
+
+    if (mounted) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text("Alert\n($almsg)"),
+          content: Text(
+            "No Internet Connection. Please check your connection and try again.\n($msg)",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+              },
+              child: Text("OK\n($okmsg)"),
+            ),
+          ],
+        ),
+      );
+      await flutterTts.speak(msg); // 🔊 Speak the message
+    }
   }
 
   Future<void> _initTranslations() async {
@@ -411,176 +485,174 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> with RouteAware {
     setState(() {}); // update UI after translation
   }
 
-Future<void> _speakLatestRecord() async {
-  if (_latestRecordText == null) return;
+  Future<void> _speakLatestRecord() async {
+    if (_latestRecordText == null) return;
 
-  if (_isSpeaking) {
-    await flutterTts.stop();
-    setState(() => _isSpeaking = false);
-  } else {
-    setState(() => _isSpeaking = true);
+    if (_isSpeaking) {
+      await flutterTts.stop();
+      setState(() => _isSpeaking = false);
+    } else {
+      setState(() => _isSpeaking = true);
 
-    await flutterTts.setLanguage(targetLangCode);
-    await flutterTts.setSpeechRate(0.5);
-    await flutterTts.awaitSpeakCompletion(true);
-    await flutterTts.speak(_latestRecordText!);
+      await flutterTts.setLanguage(targetLangCode);
+      await flutterTts.setSpeechRate(0.5);
+      await flutterTts.awaitSpeakCompletion(true);
+      await flutterTts.speak(_latestRecordText!);
 
-    setState(() => _isSpeaking = false);
+      setState(() => _isSpeaking = false);
+    }
   }
-}
 
   @override
   Widget build(BuildContext context) {
-    if (!_hasInternet) {
-      return NoInternetScreen(
-        onRetry: () {
-          _checkInternetConnection();
-        },
-      );
-    }
-
-    if (!_hasInternet) {
-      return NoInternetScreen(
-        onRetry: _checkInternetConnection, // calls the same method
-      );
-    }
-
-    return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          lblDiagnosis,
-          style: const TextStyle(
-            color: Colors.white, // set title text color to white
-            fontWeight: FontWeight.w700, // optional: make it bold
-            fontSize: 20, // optional: adjust size
+    return WillPopScope(
+      onWillPop: () async {
+        // When back is pressed → go to CropManagementScreen instead of Home
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) =>
+                CropManagementScreen(langCode: widget.widtargetLangCode),
           ),
-        ),
-        backgroundColor: Colors.green,
-        iconTheme: const IconThemeData(
-          color: Colors.white, // back button color
-        ),
-        actions: [
-          IconButton(
-            iconSize: 35.0,
-            icon: Icon(Icons.camera_alt_outlined),
-            color: Colors.white,
-            onPressed: _showImageSourceDialog,
+        );
+        return false; // Prevent default pop
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text(
+            lblDiagnosis,
+            style: const TextStyle(
+              color: Colors.white, // set title text color to white
+              fontWeight: FontWeight.w700, // optional: make it bold
+              fontSize: 20, // optional: adjust size
+            ),
           ),
-        ],
-      ),
-      body: Stack(
-        children: [
-          _history.isEmpty
-              ? const Center(child: Text("No Records found."))
-              : Padding(
-                  padding: const EdgeInsets.all(8.0),
-                  child: ListView.builder(
-                    itemCount: _history.length,
-                    itemBuilder: (context, index) {
-                      final record = _history[index];
-                      final label = record['label'] ?? 'Unknown';
-                      final confidence = (record['confidence'] ?? 0.0) * 100;
-                      final imageUrl = record['imageUrl'];
+          backgroundColor: Colors.green,
+          iconTheme: const IconThemeData(
+            color: Colors.white, // back button color
+          ),
+          actions: [
+            IconButton(
+              iconSize: 35.0,
+              icon: Icon(Icons.camera_alt_outlined),
+              color: Colors.white,
+              onPressed: _showImageSourceDialog,
+            ),
+          ],
+        ),
+        body: Stack(
+          children: [
+            _history.isEmpty
+                ? const Center(child: Text("No Records found."))
+                : Padding(
+                    padding: const EdgeInsets.all(8.0),
+                    child: ListView.builder(
+                      itemCount: _history.length,
+                      itemBuilder: (context, index) {
+                        final record = _history[index];
+                        final label = record['label'] ?? 'Unknown';
+                        final confidence = (record['confidence'] ?? 0.0) * 100;
+                        final imageUrl = record['imageUrl'];
 
-                      return Card(
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 3,
-                        margin: const EdgeInsets.symmetric(vertical: 8),
-                        child: ListTile(
-                          leading: ClipRRect(
-                            borderRadius: BorderRadius.circular(8),
-                            child: imageUrl != null
-                                ? Image.network(
-                                    imageUrl,
-                                    width: 50,
-                                    height: 50,
-                                    fit: BoxFit.cover,
-                                    errorBuilder:
-                                        (context, error, stackTrace) =>
-                                            const Icon(
-                                              Icons.broken_image,
-                                              color: Colors.redAccent,
-                                            ),
-                                  )
-                                : const Icon(
-                                    Icons.image_not_supported,
-                                    color: Colors.grey,
-                                  ),
+                        return Card(
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
                           ),
-                          title: FutureBuilder<String>(
-                            future: _withNativeTranslation(
-                              label,
-                              targetLangCode,
+                          elevation: 3,
+                          margin: const EdgeInsets.symmetric(vertical: 8),
+                          child: ListTile(
+                            leading: ClipRRect(
+                              borderRadius: BorderRadius.circular(8),
+                              child: imageUrl != null
+                                  ? Image.network(
+                                      imageUrl,
+                                      width: 50,
+                                      height: 50,
+                                      fit: BoxFit.cover,
+                                      errorBuilder:
+                                          (context, error, stackTrace) =>
+                                              const Icon(
+                                                Icons.broken_image,
+                                                color: Colors.redAccent,
+                                              ),
+                                    )
+                                  : const Icon(
+                                      Icons.image_not_supported,
+                                      color: Colors.grey,
+                                    ),
                             ),
-                            builder: (context, snapshot) {
-                              if (snapshot.connectionState ==
-                                      ConnectionState.done &&
-                                  snapshot.hasData) {
-                                return Text(
-                                  snapshot.data!,
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.w500,
+                            title: FutureBuilder<String>(
+                              future: _withNativeTranslation(
+                                label,
+                                targetLangCode,
+                              ),
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState ==
+                                        ConnectionState.done &&
+                                    snapshot.hasData) {
+                                  return Text(
+                                    snapshot.data!,
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  );
+                                } else {
+                                  return Text(label); // fallback while loading
+                                }
+                              },
+                            ),
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => CaptureScreen(
+                                    targetLangCode: targetLangCode,
+                                    existingRecord: record,
                                   ),
-                                );
-                              } else {
-                                return Text(label); // fallback while loading
-                              }
+                                ),
+                              ).then((_) {
+                                _loadHistory(); // reload when returning
+                              });
                             },
                           ),
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => CaptureScreen(
-                                  targetLangCode: targetLangCode,
-                                  existingRecord: record,
-                                ),
-                              ),
-                            ).then((_) {
-                              _loadHistory(); // reload when returning
-                            });
-                          },
-                        ),
-                      );
-                    },
+                        );
+                      },
+                    ),
+                  ),
+
+            // Full screen loader overlay
+            if (_isLoading)
+              Container(
+                color: Colors.white,
+                child: const Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      CircularProgressIndicator(),
+                      SizedBox(height: 20),
+                      Text(
+                        '',
+                        style: TextStyle(color: Colors.white, fontSize: 18),
+                      ),
+                    ],
                   ),
                 ),
-
-          // Full screen loader overlay
-          if (_isLoading)
-            Container(
-              color: Colors.white,
-              child: const Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: 20),
-                    Text(
-                      '',
-                      style: TextStyle(color: Colors.white, fontSize: 18),
-                    ),
-                  ],
-                ),
               ),
-            ),
-        ],
-      ),
-      floatingActionButton: _latestRecordText != null
-    ? FloatingActionButton(
-        heroTag: "speakerBtn",
-        backgroundColor: _isSpeaking ? Colors.grey : Colors.blue,
-        onPressed: _speakLatestRecord,
-        child: Icon(
-          _isSpeaking ? Icons.pause : Icons.volume_up,
-          color: Colors.white,
+          ],
         ),
-      )
-    : null,
-
+        floatingActionButton: _latestRecordText != null
+            ? FloatingActionButton(
+                heroTag: "speakerBtn",
+                backgroundColor: _isSpeaking ? Colors.grey : Colors.blue,
+                onPressed: _speakLatestRecord,
+                child: Icon(
+                  _isSpeaking ? Icons.pause : Icons.volume_up,
+                  color: Colors.white,
+                ),
+              )
+            : null,
+      ),
     );
   }
 }

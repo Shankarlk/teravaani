@@ -1,3 +1,4 @@
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -7,6 +8,7 @@ import 'package:intl/intl.dart';
 import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 import 'dart:async'; // Import for Timer
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:teravaani/screens/CropManagementScreen.dart';
 import 'package:uuid/uuid.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import '../api/pageapi.dart';
@@ -35,9 +37,24 @@ class _PostHarvestingScreenState extends State<PostHarvestingScreen> {
   bool hasValidationError = false; // For styling red color
   final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin =
       FlutterLocalNotificationsPlugin();
+  bool _hasInternet = true;
+  late StreamSubscription<ConnectivityResult> _connectivitySubscription;
   @override
   void initState() {
     super.initState();
+    _checkInternetConnection();
+     _connectivitySubscription =
+      Connectivity().onConnectivityChanged.listen((ConnectivityResult result) {
+    bool hasInternet = result != ConnectivityResult.none;
+
+    if (!hasInternet && mounted) {
+      _showNoInternetDialog();
+    }
+
+    setState(() {
+      _hasInternet = hasInternet;
+    });
+  });
     _initTts();
     _initializeLocalNotifications();
     WidgetsBinding.instance.addPostFrameCallback((_) async {
@@ -47,6 +64,45 @@ class _PostHarvestingScreenState extends State<PostHarvestingScreen> {
     _checkAndShowReminders();
     PageAPI.logPageVisit("PostHarvestingScreen");
   }
+
+  Future<void> _checkInternetConnection() async {
+  final connectivityResult = await Connectivity().checkConnectivity();
+  bool hasInternet = connectivityResult != ConnectivityResult.none;
+
+  if (!hasInternet && mounted) {
+    _showNoInternetDialog();
+  }
+
+  setState(() {
+    _hasInternet = hasInternet;
+  });
+}
+void _showNoInternetDialog() async {
+  final msg = await translateToNative(
+    "No Internet Connection. Please check your connection and try again."
+  );
+  final almsg = await translateToNative("Alert");
+  final okmsg = await translateToNative("OK");
+
+  if (mounted) {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text("Alert\n($almsg)"),
+        content: Text("No Internet Connection. Please check your connection and try again.\n($msg)"),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.of(ctx).pop();
+            },
+            child: Text("OK\n($okmsg)"),
+          ),
+        ],
+      ),
+    );
+    await flutterTts.speak(msg); // 🔊 Speak the message
+  }
+}
 
   @override
   void dispose() {
@@ -404,40 +460,40 @@ class _PostHarvestingScreenState extends State<PostHarvestingScreen> {
       }
     } catch (e) {
       print("Error: $e");
-        String responseMessageNt = await translateToNative(
-          "Service unavailable. Please try again later.",
-        );
-        final almsg = await translateToNative("Alert");
-        final okmsg = await translateToNative("ok");
-        setState(() {
-          responseMessage = null;
-        });
-        if (mounted) {
-          showDialog(
-            context: context,
-            builder: (ctx) => AlertDialog(
-              title: Text("Alert\n($almsg)"),
-              content: Text(
-                "Service unavailable. Please try again later.\n($responseMessageNt)",
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () {
-                    setState(() {
-                      cropName = null;
-                      sowingDate = null;
-                    });
-                    Navigator.of(ctx).pop();
-                  },
-                  child: Text("OK\n($okmsg)"),
-                ),
-              ],
+      String responseMessageNt = await translateToNative(
+        "Service unavailable. Please try again later.",
+      );
+      final almsg = await translateToNative("Alert");
+      final okmsg = await translateToNative("ok");
+      setState(() {
+        responseMessage = null;
+      });
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text("Alert\n($almsg)"),
+            content: Text(
+              "Service unavailable. Please try again later.\n($responseMessageNt)",
             ),
-          );
-          await flutterTts.speak(responseMessageNt);
-        }
-        // setState(() => responseMessage = responseMessageNt);
-        // await flutterTts.speak(responseMessageNt);
+            actions: [
+              TextButton(
+                onPressed: () {
+                  setState(() {
+                    cropName = null;
+                    sowingDate = null;
+                  });
+                  Navigator.of(ctx).pop();
+                },
+                child: Text("OK\n($okmsg)"),
+              ),
+            ],
+          ),
+        );
+        await flutterTts.speak(responseMessageNt);
+      }
+      // setState(() => responseMessage = responseMessageNt);
+      // await flutterTts.speak(responseMessageNt);
       // if (e == "Connection timed out") {
       // } else {
       //   String responseMessageNt = await translateToNative(
@@ -480,117 +536,130 @@ class _PostHarvestingScreenState extends State<PostHarvestingScreen> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: FutureBuilder<String>(
-          future: translateToNative("Post Harvesting"),
-          builder: (context, snapshot) {
-            final translated = snapshot.data ?? "Post Harvesting";
-            return Row(
-              mainAxisAlignment: MainAxisAlignment.start,
-              children: [
-                // 📝 Title (English + Native)
-                Expanded(
-                  child: Text(
-                    "Post Harvesting\n($translated)",
-                    style: const TextStyle(
-                      color: Colors.white, // white text color
-                      fontWeight: FontWeight.w700, // bold
-                      fontSize: 18,
+    return WillPopScope(
+      onWillPop: () async {
+        // When back is pressed → go to CropManagementScreen instead of Home
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) =>
+                CropManagementScreen(langCode: widget.langCode),
+          ),
+        );
+        return false; // Prevent default pop
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: FutureBuilder<String>(
+            future: translateToNative("Post Harvesting"),
+            builder: (context, snapshot) {
+              final translated = snapshot.data ?? "Post Harvesting";
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  // 📝 Title (English + Native)
+                  Expanded(
+                    child: Text(
+                      "Post Harvesting\n($translated)",
+                      style: const TextStyle(
+                        color: Colors.white, // white text color
+                        fontWeight: FontWeight.w700, // bold
+                        fontSize: 18,
+                      ),
                     ),
                   ),
-                ),
 
-                const SizedBox(width: 20),
+                  const SizedBox(width: 20),
 
-                // 🌱 Logo Image
-                Image.asset(
-                  "assets/logo.png", // same logo used in other screens
-                  height: 70,
-                  fit: BoxFit.contain,
+                  // 🌱 Logo Image
+                  Image.asset(
+                    "assets/logo.png", // same logo used in other screens
+                    height: 70,
+                    fit: BoxFit.contain,
+                  ),
+                ],
+              );
+            },
+          ),
+          backgroundColor: Colors.green,
+          iconTheme: const IconThemeData(
+            color: Colors.white, // back button color
+          ),
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 🔹 Prompt + Fields inside card
+              Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              ],
-            );
-          },
-        ),
-        backgroundColor: Colors.green,
-        iconTheme: const IconThemeData(
-          color: Colors.white, // back button color
-        ),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 🔹 Prompt + Fields inside card
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    FutureBuilder<String>(
-                      future: translateToNative(currentPrompt),
-                      builder: (context, snapshot) {
-                        return Text(
-                          "$currentPrompt\n(${snapshot.data ?? ''})",
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      FutureBuilder<String>(
+                        future: translateToNative(currentPrompt),
+                        builder: (context, snapshot) {
+                          return Text(
+                            "$currentPrompt\n(${snapshot.data ?? ''})",
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      _buildField("Crop Name", cropName ?? ""),
+                      _buildField("Sowing Date", sowingDate ?? ""),
+                      if (responseMessage != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          responseMessage!,
                           style: const TextStyle(
                             fontSize: 16,
-                            fontWeight: FontWeight.w600,
+                            color: Colors.green,
+                            fontWeight: FontWeight.w500,
                           ),
-                        );
-                      },
-                    ),
-                    const SizedBox(height: 12),
-                    _buildField("Crop Name", cropName ?? ""),
-                    _buildField("Sowing Date", sowingDate ?? ""),
-                    if (responseMessage != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        responseMessage!,
-                        style: const TextStyle(
-                          fontSize: 16,
-                          color: Colors.green,
-                          fontWeight: FontWeight.w500,
                         ),
-                      ),
-                    ],
-                    if (hasValidationError && errorMessage != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        errorMessage!,
-                        style: const TextStyle(
-                          color: Colors.red,
-                          fontSize: 16,
-                          fontWeight: FontWeight.bold,
+                      ],
+                      if (hasValidationError && errorMessage != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          errorMessage!,
+                          style: const TextStyle(
+                            color: Colors.red,
+                            fontSize: 16,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
-                      ),
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
-            ),
-            const Spacer(),
-          ],
+              const Spacer(),
+            ],
+          ),
         ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: () {
-          if (isListening) {
-            _speech.stop();
-            setState(() => isListening = false);
-          } else {
-            startListening();
-          }
-        },
-        backgroundColor: isListening ? Colors.red : Colors.green,
-        child: Icon(isListening ? Icons.mic : Icons.mic_off, size: 30),
-        tooltip: isListening ? "Stop Listening" : "Start Listening",
+        floatingActionButton: FloatingActionButton(
+          onPressed: () {
+            if (isListening) {
+              _speech.stop();
+              setState(() => isListening = false);
+            } else {
+              startListening();
+            }
+          },
+          backgroundColor: isListening ? Colors.red : Colors.green,
+          child: Icon(isListening ? Icons.mic : Icons.mic_off, size: 30),
+          tooltip: isListening ? "Stop Listening" : "Start Listening",
+        ),
       ),
     );
   }

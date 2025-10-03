@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
@@ -75,6 +77,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
       FlutterLocalNotificationsPlugin();
 
   bool _hasInternet = true;
+  late StreamSubscription<ConnectivityResult> _connectivitySubscription;
 
   @override
   void initState() {
@@ -122,9 +125,17 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     });
     _initializeLocalNotifications();
     _checkInternetConnection();
-    Connectivity().onConnectivityChanged.listen((result) {
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      ConnectivityResult result,
+    ) {
+      bool hasInternet = result != ConnectivityResult.none;
+
+      if (!hasInternet && mounted) {
+        _showNoInternetDialog();
+      }
+
       setState(() {
-        _hasInternet = result != ConnectivityResult.none;
+        _hasInternet = hasInternet;
       });
     });
     _checkAndShowReminders();
@@ -178,10 +189,45 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   }
 
   Future<void> _checkInternetConnection() async {
-    final result = await Connectivity().checkConnectivity();
+    final connectivityResult = await Connectivity().checkConnectivity();
+    bool hasInternet = connectivityResult != ConnectivityResult.none;
+
+    if (!hasInternet && mounted) {
+      _showNoInternetDialog();
+    }
+
     setState(() {
-      _hasInternet = result != ConnectivityResult.none;
+      _hasInternet = hasInternet;
     });
+  }
+
+  void _showNoInternetDialog() async {
+    final msg = await translateToNative(
+      "No Internet Connection. Please check your connection and try again.",
+    );
+    final almsg = await translateToNative("Alert");
+    final okmsg = await translateToNative("OK");
+
+    if (mounted) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text("Alert\n($almsg)"),
+          content: Text(
+            "No Internet Connection. Please check your connection and try again.\n($msg)",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+              },
+              child: Text("OK\n($okmsg)"),
+            ),
+          ],
+        ),
+      );
+      await flutterTts.speak(msg); // 🔊 Speak the message
+    }
   }
 
   Future<void> _initializeLocalNotifications() async {
@@ -1169,13 +1215,6 @@ class _VoiceHomePageState extends State<VoiceHomePage>
 
   @override
   Widget build(BuildContext context) {
-    if (!_hasInternet) {
-      return NoInternetScreen(
-        onRetry: () {
-          _checkInternetConnection();
-        },
-      );
-    }
 
     bool isLoading =
         _todayWeatherTitleNative.isEmpty ||
@@ -1207,6 +1246,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
           ],
         ),
         centerTitle: true,
+        automaticallyImplyLeading: false,
       ),
 
       body: Stack(

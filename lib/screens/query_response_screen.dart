@@ -1,3 +1,4 @@
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:geocoding/geocoding.dart';
 import 'package:geolocator/geolocator.dart';
@@ -119,10 +120,26 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
 
   late String _currentLangCode;
   bool _isMicEnabled = true;
+  bool _hasInternet = true;
+  late StreamSubscription<ConnectivityResult> _connectivitySubscription;
 
   @override
   void initState() {
     super.initState();
+    _checkInternetConnection();
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      ConnectivityResult result,
+    ) {
+      bool hasInternet = result != ConnectivityResult.none;
+
+      if (!hasInternet && mounted) {
+        _showNoInternetDialog();
+      }
+
+      setState(() {
+        _hasInternet = hasInternet;
+      });
+    });
     WidgetsBinding.instance.addObserver(
       this,
     ); // Add observer for lifecycle events
@@ -137,6 +154,48 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
 
     _addInitialWelcomeMessage();
     PageAPI.logPageVisit("ChatBotScreen");
+  }
+
+  Future<void> _checkInternetConnection() async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    bool hasInternet = connectivityResult != ConnectivityResult.none;
+
+    if (!hasInternet && mounted) {
+      _showNoInternetDialog();
+    }
+
+    setState(() {
+      _hasInternet = hasInternet;
+    });
+  }
+
+  void _showNoInternetDialog() async {
+    final msg = await translateToNative(
+      "No Internet Connection. Please check your connection and try again.",
+    );
+    final almsg = await translateToNative("Alert");
+    final okmsg = await translateToNative("OK");
+
+    if (mounted) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text("Alert\n($almsg)"),
+          content: Text(
+            "No Internet Connection. Please check your connection and try again.\n($msg)",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+              },
+              child: Text("OK\n($okmsg)"),
+            ),
+          ],
+        ),
+      );
+      await flutterTts.speak(msg); // 🔊 Speak the message
+    }
   }
 
   @override
@@ -457,7 +516,8 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
                   // ---------- CROP SCHEDULE DETECTION ----------
                   String? cropName = extractCropName(engtest.toLowerCase());
 
-                  if (engtest.toLowerCase().contains("crop guide") || engtest.toLowerCase().contains("guide")||
+                  if (engtest.toLowerCase().contains("crop guide") ||
+                      engtest.toLowerCase().contains("guide") ||
                       engtest.toLowerCase().contains("schedule")) {
                     // Ask for confirmation before showing schedule
                     setState(() {
@@ -542,8 +602,9 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
                     Navigator.pushReplacement(
                       context,
                       MaterialPageRoute(
-                        builder: (context) =>
-                            DiagnosisScreen(widtargetLangCode: _currentLangCode),
+                        builder: (context) => DiagnosisScreen(
+                          widtargetLangCode: _currentLangCode,
+                        ),
                       ),
                     );
                     // setState(() {
@@ -642,7 +703,9 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
                     // });
                     // _speakText(translatedMsg);
                     _scrollToBottom();
-                  }  else if (engtest.toLowerCase().contains("crop management") ||
+                  } else if (engtest.toLowerCase().contains(
+                        "crop management",
+                      ) ||
                       engtest.toLowerCase().contains("crop") ||
                       engtest.toLowerCase().contains("management")) {
                     _cropmng = "cropmanage";
@@ -677,7 +740,9 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
                     // });
                     // _speakText(translatedMsg);
                     _scrollToBottom();
-                  }  else if (engtest.toLowerCase().contains("post harvesting") ||
+                  } else if (engtest.toLowerCase().contains(
+                        "post harvesting",
+                      ) ||
                       engtest.toLowerCase().contains("post") ||
                       engtest.toLowerCase().contains("harvesting")) {
                     _postharvest = "postharvest";
@@ -799,10 +864,10 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
     } else if (engtext.contains("yes") &&
         _cropmng != null &&
         _cropmng!.isNotEmpty) {
-    }else if (engtext.contains("yes") &&
+    } else if (engtext.contains("yes") &&
         _postharvest != null &&
         _postharvest!.isNotEmpty) {
-    }else if (engtext.contains("yes") &&
+    } else if (engtext.contains("yes") &&
         _weather != null &&
         _weather!.isNotEmpty) {
     } else if (engtext.contains("no")) {
@@ -855,7 +920,7 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
     }
   }
 
- /* 
+  /* 
   Future<void> _getWeather(double lat, double lon) async {
   final akgl = "";
 
@@ -938,111 +1003,113 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
   }
 }
 */
-  
+
   Future<void> _getWeather(double lat, double lon) async {
-  
-  try {
-    final url = Uri.parse(
-      'https://api.weatherapi.com/v1/forecast.json'
-      '?key=1046d3b300794f6b90e122255252909'
-      '&q=$lat,$lon'
-      '&days=7'
-      '&aqi=no&alerts=no',
-    );
-
-    final response = await http.get(url);
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-
-      // Dates from forecast
-      final List dates = (data['forecast']['forecastday'] as List)
-          .map((e) => e['date'])
-          .toList();
-
-      // Temperatures (max)
-      final List<double> temps = (data['forecast']['forecastday'] as List)
-          .map((e) => (e['day']['maxtemp_c'] as num).toDouble())
-          .toList();
-
-      // Humidity (avg)
-      final List<double> humidity = (data['forecast']['forecastday'] as List)
-          .map((e) => (e['day']['avghumidity'] as num).toDouble())
-          .toList();
-
-      // Wind speed (max kph)
-      final List<double> wind = (data['forecast']['forecastday'] as List)
-          .map((e) => (e['day']['maxwind_kph'] as num).toDouble())
-          .toList();
-
-      // Condition codes + descriptions
-      final List<int> codes = (data['forecast']['forecastday'] as List)
-          .map((e) => (e['day']['condition']['code'] as num).toInt())
-          .toList();
-
-      final List<String> conditions = (data['forecast']['forecastday'] as List)
-          .map((e) => e['day']['condition']['text'].toString())
-          .toList();
-
-      // --- TODAY’s summary ---
-      final condition = conditions[0];
-      final nativeCondition = await translateToNative(condition);
-
-      // --- FULL Forecast ---
-      final forecastList = await Future.wait(
-        List.generate(dates.length, (i) async {
-          final dayName = getDayNameInNative(dates[i], _currentLangCode);
-          final nativedayName =
-              RegExp(r'\((.*?)\)').firstMatch(dayName)?.group(1) ?? '';
-
-          final nativeDesc = await translateToNative(conditions[i]);
-          final englishDesc = conditions[i];
-
-          final tempVal = temps[i].toStringAsFixed(1);
-          final humVal = humidity[i].toStringAsFixed(0);
-          final windVal = wind[i].toStringAsFixed(0);
-
-          final temp = convertToNativeDigits(tempVal, _currentLangCode);
-          final hum = convertToNativeDigits(humVal, _currentLangCode);
-          final winds = convertToNativeDigits(windVal, _currentLangCode);
-
-          final tempLabel = await translateToNative('Temperature');
-          final humLabel = await translateToNative('Humidity');
-          final windLabel = await translateToNative('Wind');
-
-          return {
-            "display":
-                "$dayName: $englishDesc ($nativeDesc), "
-                "$tempLabel: $tempVal°C, "
-                "💧 Humidity ($humLabel): $humVal%, "
-                "🌬️ Wind ($windLabel): $windVal km/h",
-            "speak":
-                "$nativedayName: $nativeDesc, "
-                "$tempLabel: $temp ಡಿಗ್ರಿ ಸೆಲ್ಸಿಯಸ್, "
-                "$humLabel: $hum ಶೇಕಡಾ, "
-                "$windLabel: $winds ಕಿ.ಮೀ/ಗಂ",
-          };
-        }),
+    try {
+      final url = Uri.parse(
+        'https://api.weatherapi.com/v1/forecast.json'
+        '?key=1046d3b300794f6b90e122255252909'
+        '&q=$lat,$lon'
+        '&days=7'
+        '&aqi=no&alerts=no',
       );
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => WeatherScreen(
-            forecastDisplay:
-                forecastList.map((e) => e['display'] as String).toList(),
-            forecastSpeak:
-                forecastList.map((e) => e['speak'] as String).toList(),
-            forecastCodes: codes,
-            targetLangCode: _currentLangCode,
+      final response = await http.get(url);
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+
+        // Dates from forecast
+        final List dates = (data['forecast']['forecastday'] as List)
+            .map((e) => e['date'])
+            .toList();
+
+        // Temperatures (max)
+        final List<double> temps = (data['forecast']['forecastday'] as List)
+            .map((e) => (e['day']['maxtemp_c'] as num).toDouble())
+            .toList();
+
+        // Humidity (avg)
+        final List<double> humidity = (data['forecast']['forecastday'] as List)
+            .map((e) => (e['day']['avghumidity'] as num).toDouble())
+            .toList();
+
+        // Wind speed (max kph)
+        final List<double> wind = (data['forecast']['forecastday'] as List)
+            .map((e) => (e['day']['maxwind_kph'] as num).toDouble())
+            .toList();
+
+        // Condition codes + descriptions
+        final List<int> codes = (data['forecast']['forecastday'] as List)
+            .map((e) => (e['day']['condition']['code'] as num).toInt())
+            .toList();
+
+        final List<String> conditions =
+            (data['forecast']['forecastday'] as List)
+                .map((e) => e['day']['condition']['text'].toString())
+                .toList();
+
+        // --- TODAY’s summary ---
+        final condition = conditions[0];
+        final nativeCondition = await translateToNative(condition);
+
+        // --- FULL Forecast ---
+        final forecastList = await Future.wait(
+          List.generate(dates.length, (i) async {
+            final dayName = getDayNameInNative(dates[i], _currentLangCode);
+            final nativedayName =
+                RegExp(r'\((.*?)\)').firstMatch(dayName)?.group(1) ?? '';
+
+            final nativeDesc = await translateToNative(conditions[i]);
+            final englishDesc = conditions[i];
+
+            final tempVal = temps[i].toStringAsFixed(1);
+            final humVal = humidity[i].toStringAsFixed(0);
+            final windVal = wind[i].toStringAsFixed(0);
+
+            final temp = convertToNativeDigits(tempVal, _currentLangCode);
+            final hum = convertToNativeDigits(humVal, _currentLangCode);
+            final winds = convertToNativeDigits(windVal, _currentLangCode);
+
+            final tempLabel = await translateToNative('Temperature');
+            final humLabel = await translateToNative('Humidity');
+            final windLabel = await translateToNative('Wind');
+
+            return {
+              "display":
+                  "$dayName: $englishDesc ($nativeDesc), "
+                  "$tempLabel: $tempVal°C, "
+                  "💧 Humidity ($humLabel): $humVal%, "
+                  "🌬️ Wind ($windLabel): $windVal km/h",
+              "speak":
+                  "$nativedayName: $nativeDesc, "
+                  "$tempLabel: $temp ಡಿಗ್ರಿ ಸೆಲ್ಸಿಯಸ್, "
+                  "$humLabel: $hum ಶೇಕಡಾ, "
+                  "$windLabel: $winds ಕಿ.ಮೀ/ಗಂ",
+            };
+          }),
+        );
+
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) => WeatherScreen(
+              forecastDisplay: forecastList
+                  .map((e) => e['display'] as String)
+                  .toList(),
+              forecastSpeak: forecastList
+                  .map((e) => e['speak'] as String)
+                  .toList(),
+              forecastCodes: codes,
+              targetLangCode: _currentLangCode,
+            ),
           ),
-        ),
-      );
-    } else {
-      print("❌ Error: ${response.statusCode}");
+        );
+      } else {
+        print("❌ Error: ${response.statusCode}");
+      }
+    } catch (e) {
+      print("❌ Exception fetching weather: $e");
     }
-  } catch (e) {
-    print("❌ Exception fetching weather: $e");
-  }
   }
 
   String getDayNameInNative(String date, String langCode) {

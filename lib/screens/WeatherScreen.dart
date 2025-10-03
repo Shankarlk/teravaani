@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'dart:convert';
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
@@ -6,6 +8,7 @@ import 'package:geocoding/geocoding.dart';
 import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 import 'package:http/http.dart' as http;
 import 'package:teravaani/database/database_helper.dart';
+import 'package:teravaani/main.dart';
 import '../api/pageapi.dart';
 
 class WeatherScreen extends StatefulWidget {
@@ -35,10 +38,26 @@ class _WeatherScreenState extends State<WeatherScreen>
   List<int> _forecastCodes = [];
   bool _loading = true;
   final ScrollController _scrollController = ScrollController();
+  bool _hasInternet = true;
+  late StreamSubscription<ConnectivityResult> _connectivitySubscription;
 
   @override
   void initState() {
     super.initState();
+    _checkInternetConnection();
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      ConnectivityResult result,
+    ) {
+      bool hasInternet = result != ConnectivityResult.none;
+
+      if (!hasInternet && mounted) {
+        _showNoInternetDialog();
+      }
+
+      setState(() {
+        _hasInternet = hasInternet;
+      });
+    });
     WidgetsBinding.instance.addObserver(this);
     _flutterTts.setCompletionHandler(() {
       setState(() => _isSpeaking = false);
@@ -49,6 +68,7 @@ class _WeatherScreenState extends State<WeatherScreen>
     PageAPI.logPageVisit("WeatherScreen");
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (widget.forecastDisplay.isEmpty) {
+        setState(() => _isSpeaking = false);
         _fetchForecast(); // ✅ Fetch if empty
       } else {
         setState(() {
@@ -57,9 +77,56 @@ class _WeatherScreenState extends State<WeatherScreen>
           _forecastCodes = widget.forecastCodes;
           _loading = false;
         });
-        _toggleSpeech();
+        Future.delayed(const Duration(milliseconds: 500), () {
+          if (_forecastSpeak.isNotEmpty) {
+            _toggleSpeech();
+          }
+        });
       }
     });
+  }
+
+  Future<void> _checkInternetConnection() async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    bool hasInternet = connectivityResult != ConnectivityResult.none;
+
+    if (!hasInternet && mounted) {
+      _showNoInternetDialog();
+    }
+
+    setState(() {
+      _hasInternet = hasInternet;
+    });
+  }
+
+  void _showNoInternetDialog() async {
+    final msg = await translateToNative(
+      "No Internet Connection. Please check your connection and try again.",
+      
+    );
+    final almsg = await translateToNative("Alert");
+    final okmsg = await translateToNative("OK");
+
+    if (mounted) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text("Alert\n($almsg)"),
+          content: Text(
+            "No Internet Connection. Please check your connection and try again.\n($msg)",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+              },
+              child: Text("OK\n($okmsg)"),
+            ),
+          ],
+        ),
+      );
+      await _flutterTts.speak(msg); // 🔊 Speak the message
+    }
   }
 
   Future<void> _fetchForecast() async {
@@ -172,6 +239,11 @@ class _WeatherScreenState extends State<WeatherScreen>
                     .toList();
                 _forecastCodes = codes;
                 _loading = false;
+              });
+              Future.delayed(const Duration(milliseconds: 500), () {
+                if (_forecastSpeak.isNotEmpty) {
+                  _toggleSpeech();
+                }
               });
             } else {
               setState(() => _loading = false);
@@ -297,7 +369,7 @@ class _WeatherScreenState extends State<WeatherScreen>
       setState(() => _isSpeaking = false);
     } else {
       final visibleIndices = _getVisibleIndices();
-      final texts = visibleIndices.map((i) => widget.forecastSpeak[i]).toList();
+      final texts = visibleIndices.map((i) => _forecastSpeak[i]).toList();
       final nativeText = texts.join('. ');
 
       if (nativeText.trim().isNotEmpty) {
@@ -321,7 +393,7 @@ class _WeatherScreenState extends State<WeatherScreen>
     double itemHeight =
         180; // approximate card height (tweak as per your design)
 
-    for (int i = 0; i < widget.forecastSpeak.length; i++) {
+    for (int i = 0; i < _forecastSpeak.length; i++) {
       final itemTop = i * itemHeight;
       final itemBottom = itemTop + itemHeight;
       if (itemBottom >= firstPixel && itemTop <= lastPixel) {
@@ -596,224 +668,236 @@ class _WeatherScreenState extends State<WeatherScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      backgroundColor: Colors.white, // black background like screenshot
-      appBar: AppBar(
-        title: FutureBuilder<String>(
-          future: translateToNative("Weather Forecast"), // translate the title
-          builder: (context, snapshot) {
-            final translated = snapshot.data ?? "";
-            return Row(
-              mainAxisAlignment: MainAxisAlignment.start,
-              children: [
-                // 📝 Title (English + Native)
-                Expanded(
-                  child: Text(
-                    "Weather Forecast\n($translated)",
-                    style: const TextStyle(
-                      color: Colors.white, // white text color
-                      fontWeight: FontWeight.w700, // bold
-                      fontSize: 18,
+    return WillPopScope(
+      onWillPop: () async {
+        // When back is pressed → go to CropManagementScreen instead of Home
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(builder: (context) => VoiceHomePage()),
+        );
+        return false; // Prevent default pop
+      },
+      child: Scaffold(
+        backgroundColor: Colors.white, // black background like screenshot
+        appBar: AppBar(
+          title: FutureBuilder<String>(
+            future: translateToNative(
+              "Weather Forecast",
+            ), // translate the title
+            builder: (context, snapshot) {
+              final translated = snapshot.data ?? "";
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  // 📝 Title (English + Native)
+                  Expanded(
+                    child: Text(
+                      "Weather Forecast\n($translated)",
+                      style: const TextStyle(
+                        color: Colors.white, // white text color
+                        fontWeight: FontWeight.w700, // bold
+                        fontSize: 18,
+                      ),
                     ),
                   ),
-                ),
 
-                const SizedBox(width: 20),
+                  const SizedBox(width: 20),
 
-                // 🌱 Logo Image
-                Image.asset(
-                  "assets/logo.png", // same logo as other screens
-                  height: 70,
-                  fit: BoxFit.contain,
-                ),
-              ],
-            );
-          },
+                  // 🌱 Logo Image
+                  Image.asset(
+                    "assets/logo.png", // same logo as other screens
+                    height: 70,
+                    fit: BoxFit.contain,
+                  ),
+                ],
+              );
+            },
+          ),
+          backgroundColor: Colors.green.shade700,
+          iconTheme: const IconThemeData(
+            color: Colors.white, // back button color
+          ),
         ),
-        backgroundColor: Colors.green.shade700,
-        iconTheme: const IconThemeData(
-          color: Colors.white, // back button color
-        ),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(12.0),
-        child: _loading
-            ? const Center(child: CircularProgressIndicator())
-            : _forecastDisplay.isEmpty
-            ? const Center(child: Text('No forecast available'))
-            : ListView.builder(
-                controller: _scrollController,
-                itemCount: _forecastDisplay.length,
-                itemBuilder: (context, index) {
-                  final forecastText = _forecastDisplay[index];
-                  final weatherCode = _forecastCodes[index];
+        body: Padding(
+          padding: const EdgeInsets.all(12.0),
+          child: _loading
+              ? const Center(child: CircularProgressIndicator())
+              : _forecastDisplay.isEmpty
+              ? const Center(child: Text('No forecast available'))
+              : ListView.builder(
+                  controller: _scrollController,
+                  itemCount: _forecastDisplay.length,
+                  itemBuilder: (context, index) {
+                    final forecastText = _forecastDisplay[index];
+                    final weatherCode = _forecastCodes[index];
 
-                  // Split day and details
-                  final parts = forecastText.split(":");
-                  final dayPart = parts.isNotEmpty ? parts[0].trim() : "Day";
-                  final detailsPart = parts.length > 1
-                      ? parts.sublist(1).join(":").trim()
-                      : "";
+                    // Split day and details
+                    final parts = forecastText.split(":");
+                    final dayPart = parts.isNotEmpty ? parts[0].trim() : "Day";
+                    final detailsPart = parts.length > 1
+                        ? parts.sublist(1).join(":").trim()
+                        : "";
 
-                  // Extract temperature
-                  final tempMatch = RegExp(
-                    r'([-+]?\d+(\.\d+)?)',
-                  ).firstMatch(detailsPart);
-                  final temperature = tempMatch != null
-                      ? "${tempMatch.group(0)}°C"
-                      : "--°C";
+                    // Extract temperature
+                    final tempMatch = RegExp(
+                      r'([-+]?\d+(\.\d+)?)',
+                    ).firstMatch(detailsPart);
+                    final temperature = tempMatch != null
+                        ? "${tempMatch.group(0)}°C"
+                        : "--°C";
 
-                  // Extract condition (text before first comma)
-                  final conditionPart = detailsPart.split(",").isNotEmpty
-                      ? detailsPart.split(",")[0].trim()
-                      : "";
+                    // Extract condition (text before first comma)
+                    final conditionPart = detailsPart.split(",").isNotEmpty
+                        ? detailsPart.split(",")[0].trim()
+                        : "";
 
-                  // Extract humidity and wind values
-                  final humMatch = RegExp(
-                    r'Humidity.*?(\d+)%',
-                  ).firstMatch(detailsPart);
-                  final windMatch = RegExp(
-                    r'Wind.*?(\d+)\s?km/h',
-                  ).firstMatch(detailsPart);
-                  final humidityVal = humMatch != null
-                      ? humMatch.group(1)!
-                      : "--";
-                  final windVal = windMatch != null
-                      ? windMatch.group(1)!
-                      : "--";
+                    // Extract humidity and wind values
+                    final humMatch = RegExp(
+                      r'Humidity.*?(\d+)%',
+                    ).firstMatch(detailsPart);
+                    final windMatch = RegExp(
+                      r'Wind.*?(\d+)\s?km/h',
+                    ).firstMatch(detailsPart);
+                    final humidityVal = humMatch != null
+                        ? humMatch.group(1)!
+                        : "--";
+                    final windVal = windMatch != null
+                        ? windMatch.group(1)!
+                        : "--";
 
-                  return FutureBuilder(
-                    future: Future.wait([
-                      translateToNative('Humidity'),
-                      translateToNative('Wind'),
-                    ]),
-                    builder: (context, snapshot) {
-                      final labels = snapshot.data ?? ['Humidity', 'Wind'];
-                      final humidityNative = labels[0];
-                      final windNative = labels[1];
+                    return FutureBuilder(
+                      future: Future.wait([
+                        translateToNative('Humidity'),
+                        translateToNative('Wind'),
+                      ]),
+                      builder: (context, snapshot) {
+                        final labels = snapshot.data ?? ['Humidity', 'Wind'];
+                        final humidityNative = labels[0];
+                        final windNative = labels[1];
 
-                      return Card(
-                        margin: const EdgeInsets.symmetric(vertical: 10),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        elevation: 4,
-                        child: Padding(
-                          padding: const EdgeInsets.all(18.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.center,
-                            children: [
-                              // Day
-                              Text(
-                                dayPart,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  fontSize: 18,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              const SizedBox(height: 12),
-
-                              // Row: Thermometer + Temp + Condition + Weather Icon
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  // const Icon(Icons.thermostat, size: 60, color: Colors.black),
-                                  Icon(
-                                    getWeatherIcon(weatherCode),
-                                    size: 50,
-                                    color: getWeatherColor(weatherCode),
+                        return Card(
+                          margin: const EdgeInsets.symmetric(vertical: 10),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          elevation: 4,
+                          child: Padding(
+                            padding: const EdgeInsets.all(18.0),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.center,
+                              children: [
+                                // Day
+                                Text(
+                                  dayPart,
+                                  textAlign: TextAlign.center,
+                                  style: const TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
                                   ),
-                                  const SizedBox(width: 8),
-                                  Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.center,
-                                    children: [
-                                      Text(
-                                        temperature,
-                                        style: const TextStyle(
-                                          fontSize: 23,
-                                          fontWeight: FontWeight.bold,
-                                          color: Colors.black,
-                                        ),
-                                      ),
-                                      const SizedBox(height: 4),
-                                      SizedBox(
-                                        width: 100,
-                                        child: Text(
-                                          conditionPart,
-                                          textAlign: TextAlign.center,
+                                ),
+                                const SizedBox(height: 12),
+
+                                // Row: Thermometer + Temp + Condition + Weather Icon
+                                Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    // const Icon(Icons.thermostat, size: 60, color: Colors.black),
+                                    Icon(
+                                      getWeatherIcon(weatherCode),
+                                      size: 50,
+                                      color: getWeatherColor(weatherCode),
+                                    ),
+                                    const SizedBox(width: 8),
+                                    Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.center,
+                                      children: [
+                                        Text(
+                                          temperature,
                                           style: const TextStyle(
-                                            fontSize: 12,
-                                            color: Colors.black87,
+                                            fontSize: 23,
+                                            fontWeight: FontWeight.bold,
+                                            color: Colors.black,
                                           ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                  // const SizedBox(width: 20),
-                                ],
-                              ),
-
-                              const SizedBox(height: 12),
-
-                              // Row: Humidity & Wind (both English + native labels)
-                              Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceEvenly,
-                                children: [
-                                  Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.opacity,
-                                        size: 20,
-                                        color: Colors.blue,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        "Humidity ($humidityNative): $humidityVal%", // both labels
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          color: Color.fromARGB(251, 7, 6, 6),
+                                        const SizedBox(height: 4),
+                                        SizedBox(
+                                          width: 100,
+                                          child: Text(
+                                            conditionPart,
+                                            textAlign: TextAlign.center,
+                                            style: const TextStyle(
+                                              fontSize: 12,
+                                              color: Colors.black87,
+                                            ),
+                                          ),
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                  Row(
-                                    children: [
-                                      const Icon(
-                                        Icons.air,
-                                        size: 20,
-                                        color: Colors.grey,
-                                      ),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        "Wind ($windNative): $windVal km/h", // both labels
-                                        style: const TextStyle(
-                                          fontSize: 14,
-                                          color: Color.fromARGB(251, 7, 6, 6),
+                                      ],
+                                    ),
+                                    // const SizedBox(width: 20),
+                                  ],
+                                ),
+
+                                const SizedBox(height: 12),
+
+                                // Row: Humidity & Wind (both English + native labels)
+                                Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceEvenly,
+                                  children: [
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.opacity,
+                                          size: 20,
+                                          color: Colors.blue,
                                         ),
-                                      ),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ],
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          "Humidity ($humidityNative): $humidityVal%", // both labels
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            color: Color.fromARGB(251, 7, 6, 6),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                    Row(
+                                      children: [
+                                        const Icon(
+                                          Icons.air,
+                                          size: 20,
+                                          color: Colors.grey,
+                                        ),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          "Wind ($windNative): $windVal km/h", // both labels
+                                          style: const TextStyle(
+                                            fontSize: 14,
+                                            color: Color.fromARGB(251, 7, 6, 6),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ],
+                            ),
                           ),
-                        ),
-                      );
-                    },
-                  );
-                },
-              ),
-      ),
-      floatingActionButton: FloatingActionButton(
-        onPressed: _toggleSpeech,
-        backgroundColor: Colors.green,
-        tooltip: _isSpeaking ? "Pause" : "Speak forecast",
-        child: Icon(
-          _isSpeaking ? Icons.pause : Icons.volume_up,
-          color: Colors.white,
+                        );
+                      },
+                    );
+                  },
+                ),
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: _toggleSpeech,
+          backgroundColor: _isSpeaking ? Colors.grey : Colors.blue,
+          tooltip: _isSpeaking ? "Pause" : "Speak forecast",
+          child: Icon(
+            _isSpeaking ? Icons.pause : Icons.volume_up,
+            color: Colors.white,
+          ),
         ),
       ),
     );

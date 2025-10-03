@@ -24,7 +24,8 @@ class CropManagementScreen extends StatefulWidget {
   State<CropManagementScreen> createState() => _CropManagementScreenState();
 }
 
-class _CropManagementScreenState extends State<CropManagementScreen> with WidgetsBindingObserver,RouteAware {
+class _CropManagementScreenState extends State<CropManagementScreen>
+    with WidgetsBindingObserver, RouteAware {
   String lblTitle = "Crop Management";
   String lblDiagnose = "Diagnose Plant";
   late StreamSubscription<ConnectivityResult> _connectivitySubscription;
@@ -42,24 +43,32 @@ class _CropManagementScreenState extends State<CropManagementScreen> with Widget
   @override
   void initState() {
     super.initState();
+    _checkInternetConnection();
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
       ConnectivityResult result,
     ) {
+      bool hasInternet = result != ConnectivityResult.none;
+
+      if (!hasInternet && mounted) {
+        _showNoInternetDialog();
+      }
+
       setState(() {
-        _hasInternet = result != ConnectivityResult.none;
+        _hasInternet = hasInternet;
       });
     });
     _flutterTts.setCompletionHandler(() {
-        setState(() => _isSpeaking = false);
+      setState(() => _isSpeaking = false);
     });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initTranslations();
     });
   }
-  
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused || state == AppLifecycleState.inactive) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
       // App is minimized / backgrounded
       if (_isSpeaking) {
         _flutterTts.stop();
@@ -81,7 +90,7 @@ class _CropManagementScreenState extends State<CropManagementScreen> with Widget
   }
 
   Future<void> _speakContent() async {
-      await _flutterTts.stop();
+    await _flutterTts.stop();
     if (_isSpeaking) {
       await _flutterTts.stop();
       setState(() => _isSpeaking = false);
@@ -170,17 +179,54 @@ class _CropManagementScreenState extends State<CropManagementScreen> with Widget
 
   Future<void> _checkInternetConnection() async {
     final connectivityResult = await Connectivity().checkConnectivity();
+    bool hasInternet = connectivityResult != ConnectivityResult.none;
+
+    if (!hasInternet && mounted) {
+      _showNoInternetDialog();
+    }
+
     setState(() {
-      _hasInternet = connectivityResult != ConnectivityResult.none;
+      _hasInternet = hasInternet;
     });
   }
-  
+
+  void _showNoInternetDialog() async {
+    final msg = await _translateToNativeLanguage(
+      "No Internet Connection. Please check your connection and try again.",
+      widget.langCode,
+    );
+    final almsg = await _translateToNativeLanguage("Alert", widget.langCode);
+    final okmsg = await _translateToNativeLanguage("OK", widget.langCode);
+
+    if (mounted) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text("Alert\n($almsg)"),
+          content: Text(
+            "No Internet Connection. Please check your connection and try again.\n($msg)",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+              },
+              child: Text("OK\n($okmsg)"),
+            ),
+          ],
+        ),
+      );
+      await _flutterTts.speak(msg); // 🔊 Speak the message
+    }
+  }
+
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _flutterTts.stop();
     super.dispose();
   }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -198,12 +244,8 @@ class _CropManagementScreenState extends State<CropManagementScreen> with Widget
     });
   }
 
-
   @override
   Widget build(BuildContext context) {
-    if (!_hasInternet) {
-      return NoInternetScreen(onRetry: _checkInternetConnection);
-    }
 
     return Scaffold(
       appBar: AppBar(
@@ -212,17 +254,16 @@ class _CropManagementScreenState extends State<CropManagementScreen> with Widget
           children: [
             // space between logo and text
             // 📝 App Name
-                Expanded(
-                  child: 
-                  Text(
-                    lblTitle,
-                    style: const TextStyle(
-                      color: Colors.white, // set title text color to white
-                      fontWeight: FontWeight.w700, // optional: make it bold
-                      fontSize: 20, // optional: adjust size
-                    ),
-                  ),
+            Expanded(
+              child: Text(
+                lblTitle,
+                style: const TextStyle(
+                  color: Colors.white, // set title text color to white
+                  fontWeight: FontWeight.w700, // optional: make it bold
+                  fontSize: 20, // optional: adjust size
                 ),
+              ),
+            ),
             const SizedBox(width: 20),
             Image.asset(
               "assets/logo.png", // your image path
@@ -324,6 +365,7 @@ class _CropManagementScreenState extends State<CropManagementScreen> with Widget
             heroTag: "micBtn",
             backgroundColor: Colors.green,
             onPressed: () {
+              _flutterTts.stop();
               Navigator.push(
                 context,
                 MaterialPageRoute(

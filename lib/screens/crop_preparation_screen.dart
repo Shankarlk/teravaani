@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_to_text.dart' as stt;
@@ -5,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'dart:convert';
 import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 import 'package:flutter/rendering.dart'; // Required for RenderAbstractViewport
+import 'package:teravaani/screens/CropManagementScreen.dart';
 import '../api/pageapi.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 
@@ -18,7 +22,8 @@ class CropPreparationScreen extends StatefulWidget {
   State<CropPreparationScreen> createState() => _CropPreparationScreenState();
 }
 
-class _CropPreparationScreenState extends State<CropPreparationScreen> with WidgetsBindingObserver {
+class _CropPreparationScreenState extends State<CropPreparationScreen>
+    with WidgetsBindingObserver {
   final FlutterTts flutterTts = FlutterTts();
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool isListening = false;
@@ -33,12 +38,28 @@ class _CropPreparationScreenState extends State<CropPreparationScreen> with Widg
   bool isSpeaking = false;
   bool isErrorOrNoSteps = false;
   final GlobalKey _scrollKey = GlobalKey();
+  bool _hasInternet = true;
+  late StreamSubscription<ConnectivityResult> _connectivitySubscription;
 
   @override
   void initState() {
     super.initState();
+    _checkInternetConnection();
+    _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
+      ConnectivityResult result,
+    ) {
+      bool hasInternet = result != ConnectivityResult.none;
+
+      if (!hasInternet && mounted) {
+        _showNoInternetDialog();
+      }
+
+      setState(() {
+        _hasInternet = hasInternet;
+      });
+    });
     _initTts();
-  WidgetsBinding.instance.addObserver(this);
+    WidgetsBinding.instance.addObserver(this);
     WidgetsBinding.instance.addPostFrameCallback((_) async {
       if (widget.cropName != null && widget.cropName!.isNotEmpty) {
         // 👇 Auto-fetch if cropName provided
@@ -52,6 +73,48 @@ class _CropPreparationScreenState extends State<CropPreparationScreen> with Widg
       }
     });
     PageAPI.logPageVisit("PreSowingPreparationScreen");
+  }
+
+  Future<void> _checkInternetConnection() async {
+    final connectivityResult = await Connectivity().checkConnectivity();
+    bool hasInternet = connectivityResult != ConnectivityResult.none;
+
+    if (!hasInternet && mounted) {
+      _showNoInternetDialog();
+    }
+
+    setState(() {
+      _hasInternet = hasInternet;
+    });
+  }
+
+  void _showNoInternetDialog() async {
+    final msg = await translateToNative(
+      "No Internet Connection. Please check your connection and try again.",
+    );
+    final almsg = await translateToNative("Alert");
+    final okmsg = await translateToNative("OK");
+
+    if (mounted) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: Text("Alert\n($almsg)"),
+          content: Text(
+            "No Internet Connection. Please check your connection and try again.\n($msg)",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                Navigator.of(ctx).pop();
+              },
+              child: Text("OK\n($okmsg)"),
+            ),
+          ],
+        ),
+      );
+      await flutterTts.speak(msg); // 🔊 Speak the message
+    }
   }
 
   @override
@@ -183,78 +246,78 @@ class _CropPreparationScreenState extends State<CropPreparationScreen> with Widg
   }
 
   Future<void> fetchPreparationSteps(String crop) async {
-  try {
-    final url = Uri.parse("http://172.20.10.5:3000/api/preparation/$crop");
-    final response = await http.get(url);
+    try {
+      final url = Uri.parse("http://172.20.10.5:3000/api/preparation/$crop");
+      final response = await http.get(url);
 
-    if (response.statusCode == 200) {
-      final data = json.decode(response.body);
-      final steps = data['steps'] as List<dynamic>;
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+        final steps = data['steps'] as List<dynamic>;
 
-      if (steps.isEmpty) {
-        final msg = await translateToNative("No steps found.");
+        if (steps.isEmpty) {
+          final msg = await translateToNative("No steps found.");
+          setState(() {
+            preparationSteps = msg;
+            showPreparation = true;
+            isErrorOrNoSteps = true;
+          });
+          await flutterTts.speak(msg);
+          return;
+        }
+
+        final englishList = <String>[];
+        final nativeList = <String>[];
+
+        for (var step in steps) {
+          final englishText =
+              "${step['StepOrder']}. ${step['StepTitle']}: ${step['StepDescription']}";
+          final nativeText = await translateToNative(englishText);
+          englishList.add(englishText);
+          nativeList.add(nativeText);
+        }
+
         setState(() {
-          preparationSteps = msg;
+          englishSteps = englishList.join("\n");
+          nativeSteps = nativeList.join("\n");
+          showPreparation = true;
+          isSpeaking = true;
+          isErrorOrNoSteps = false;
+        });
+
+        await flutterTts.speak(nativeList.join(". "));
+      } else {
+        final err = await translateToNative(
+          "Failed to fetch preparation steps.",
+        );
+        setState(() {
+          preparationSteps = "Failed to fetch preparation steps.\n($err)";
           showPreparation = true;
           isErrorOrNoSteps = true;
         });
-        await flutterTts.speak(msg);
-        return;
+        await flutterTts.speak(err);
       }
-
-      final englishList = <String>[];
-      final nativeList = <String>[];
-
-      for (var step in steps) {
-        final englishText =
-            "${step['StepOrder']}. ${step['StepTitle']}: ${step['StepDescription']}";
-        final nativeText = await translateToNative(englishText);
-        englishList.add(englishText);
-        nativeList.add(nativeText);
-      }
-
+    } catch (e) {
+      final err = await translateToNative(
+        "Service unavailable. Please try again later.",
+      );
+      final almsg = await translateToNative("Alert");
+      final okmsg = await translateToNative("ok");
       setState(() {
-        englishSteps = englishList.join("\n");
-        nativeSteps = nativeList.join("\n");
-        showPreparation = true;
-        isSpeaking = true;
-        isErrorOrNoSteps = false;
-      });
-
-      await flutterTts.speak(nativeList.join(". "));
-    } else {
-      final err = await translateToNative("Failed to fetch preparation steps.");
-      setState(() {
-        preparationSteps = "Failed to fetch preparation steps.\n($err)";
-        showPreparation = true;
+        preparationSteps = err;
+        showPreparation = false;
         isErrorOrNoSteps = true;
       });
       await flutterTts.speak(err);
-    }
-  } catch (e) {
-    final err = await translateToNative(
-      "Service unavailable. Please try again later.",
-    );
-    final almsg = await translateToNative(
-      "Alert",
-    );
-    final okmsg = await translateToNative(
-      "ok",
-    );
-    setState(() {
-      preparationSteps = err;
-      showPreparation = false;
-      isErrorOrNoSteps = true;
-    });
-    await flutterTts.speak(err);
-    if (mounted) {
-      showDialog(
-        context: context,
-        builder: (ctx) => AlertDialog(
-          title: Text("Alert\n($almsg)"),
-          content: Text("Service unavailable. Please try again later.\n($err)"),
-          actions: [
-            TextButton(
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: Text("Alert\n($almsg)"),
+            content: Text(
+              "Service unavailable. Please try again later.\n($err)",
+            ),
+            actions: [
+              TextButton(
                 onPressed: () {
                   setState(() {
                     cropName = null;
@@ -263,12 +326,12 @@ class _CropPreparationScreenState extends State<CropPreparationScreen> with Widg
                 },
                 child: Text("OK\n($okmsg)"),
               ),
-          ],  
-        ),
-      );
+            ],
+          ),
+        );
+      }
     }
   }
-}
 
   List<Widget> _buildStepList(String englishSteps, String nativeSteps) {
     final englishLines = englishSteps.split('\n');
@@ -348,186 +411,203 @@ class _CropPreparationScreenState extends State<CropPreparationScreen> with Widg
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: FutureBuilder<String>(
-          future: translateToNative("Pre Sowing"),
-          builder: (context, snapshot) {
-            final native = snapshot.data ?? "Pre Sowing";
-            return Row(
-              mainAxisAlignment: MainAxisAlignment.start,
-              children: [
-                // 📝 Title (English + Native)
-                Expanded(
-                  child: Text(
-                    "Pre Sowing\n($native)",
-                    style: const TextStyle(
-                      color: Colors.white, // set title text color to white
-                      fontWeight: FontWeight.w700, // bold text
-                      fontSize: 18,
+    return WillPopScope(
+      onWillPop: () async {
+        // When back is pressed → go to CropManagementScreen instead of Home
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (context) =>
+                CropManagementScreen(langCode: widget.langCode),
+          ),
+        );
+        return false; // Prevent default pop
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: FutureBuilder<String>(
+            future: translateToNative("Pre Sowing"),
+            builder: (context, snapshot) {
+              final native = snapshot.data ?? "Pre Sowing";
+              return Row(
+                mainAxisAlignment: MainAxisAlignment.start,
+                children: [
+                  // 📝 Title (English + Native)
+                  Expanded(
+                    child: Text(
+                      "Pre Sowing\n($native)",
+                      style: const TextStyle(
+                        color: Colors.white, // set title text color to white
+                        fontWeight: FontWeight.w700, // bold text
+                        fontSize: 18,
+                      ),
                     ),
                   ),
-                ),
 
-                const SizedBox(width: 20),
+                  const SizedBox(width: 20),
 
-                // 🌱 Logo Image
-                Image.asset(
-                  "assets/logo.png", // same logo used in other screens
-                  height: 70,
-                  fit: BoxFit.contain,
+                  // 🌱 Logo Image
+                  Image.asset(
+                    "assets/logo.png", // same logo used in other screens
+                    height: 70,
+                    fit: BoxFit.contain,
+                  ),
+                ],
+              );
+            },
+          ),
+          backgroundColor: Colors.green,
+          iconTheme: const IconThemeData(
+            color: Colors.white, // back button color
+          ),
+        ),
+        body: Padding(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // 🔹 Prompt + Crop Field inside card
+              Card(
+                elevation: 4,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
                 ),
-              ],
-            );
-          },
-        ),
-        backgroundColor: Colors.green,
-        iconTheme: const IconThemeData(
-          color: Colors.white, // back button color
-        ),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(16.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // 🔹 Prompt + Crop Field inside card
-            Card(
-              elevation: 4,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(12),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(16.0),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    FutureBuilder<String>(
-                      future: translateToNative(currentPrompt),
-                      builder: (context, snapshot) {
-                        return Text(
-                          "$currentPrompt\n(${snapshot.data ?? ''})",
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      FutureBuilder<String>(
+                        future: translateToNative(currentPrompt),
+                        builder: (context, snapshot) {
+                          return Text(
+                            "$currentPrompt\n(${snapshot.data ?? ''})",
+                            style: const TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          );
+                        },
+                      ),
+                      const SizedBox(height: 12),
+                      _buildField("Crop Name", cropName ?? "e.g., Tomato"),
+                      if (hasValidationError && errorMessage != null) ...[
+                        const SizedBox(height: 8),
+                        Text(
+                          errorMessage!,
                           style: const TextStyle(
-                            fontSize: 16,
-                            fontWeight: FontWeight.w600,
+                            color: Colors.red,
+                            fontSize: 14,
+                            fontWeight: FontWeight.bold,
                           ),
-                        );
-                      },
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // 🔹 Steps card (visible only after API fetch)
+              // 🔹 Steps card (visible only after API fetch)
+              if (showPreparation)
+                Expanded(
+                  child: Card(
+                    elevation: 4,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
                     ),
-                    const SizedBox(height: 12),
-                    _buildField("Crop Name", cropName ?? "e.g., Tomato"),
-                    if (hasValidationError && errorMessage != null) ...[
-                      const SizedBox(height: 8),
-                      Text(
-                        errorMessage!,
-                        style: const TextStyle(
-                          color: Colors.red,
-                          fontSize: 14,
-                          fontWeight: FontWeight.bold,
+                    child: Padding(
+                      padding: const EdgeInsets.all(16.0),
+                      child: SingleChildScrollView(
+                        key: _scrollKey,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                const FaIcon(
+                                  FontAwesomeIcons.seedling,
+                                  color: Colors.green,
+                                ),
+                                const SizedBox(width: 8),
+                                FutureBuilder<String>(
+                                  future: translateToNative("Steps"),
+                                  builder: (context, snapshot) {
+                                    final nativeLabel =
+                                        snapshot.data ?? "Steps";
+                                    return Text(
+                                      "Steps ($nativeLabel):",
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    );
+                                  },
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            ..._buildStepList(englishSteps, nativeSteps),
+                          ],
                         ),
                       ),
-                    ],
-                  ],
-                ),
-              ),
-            ),
-
-            const SizedBox(height: 16),
-
-            // 🔹 Steps card (visible only after API fetch)
-            // 🔹 Steps card (visible only after API fetch)
-            if (showPreparation)
-              Expanded(
-                child: Card(
-                  elevation: 4,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: SingleChildScrollView(
-                      key: _scrollKey,
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Row(
-                            children: [
-                              const FaIcon(
-                                FontAwesomeIcons.seedling,
-                                color: Colors.green,
-                              ),
-                              const SizedBox(width: 8),
-                              FutureBuilder<String>(
-                                future: translateToNative("Steps"),
-                                builder: (context, snapshot) {
-                                  final nativeLabel = snapshot.data ?? "Steps";
-                                  return Text(
-                                    "Steps ($nativeLabel):",
-                                    style: const TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  );
-                                },
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 12),
-                            ..._buildStepList(englishSteps, nativeSteps),
-                        ],
-                      ),
                     ),
                   ),
                 ),
-              ),
-          ],
+            ],
+          ),
         ),
-      ),
 
-      floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
-      floatingActionButton: Row(
-        mainAxisSize: MainAxisSize.min, // shrink row to content
-        children: [
-          // 🔊 Speaker button (visible only if steps available)
-          if (showPreparation)
-            FloatingActionButton(
-              heroTag: "speakBtn",
-              onPressed: () async {
-                if (isSpeaking) {
-                  await flutterTts.stop();
-                  setState(() => isSpeaking = false);
-                } else {
-                  final visibleText = _getVisibleText();
-                  if (visibleText.isNotEmpty) {
-                    setState(() => isSpeaking = true);
-                    await flutterTts.speak(visibleText);
-                    flutterTts.setCompletionHandler(() {
-                      setState(() => isSpeaking = false);
-                    });
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
+        floatingActionButton: Row(
+          mainAxisSize: MainAxisSize.min, // shrink row to content
+          children: [
+            // 🔊 Speaker button (visible only if steps available)
+            if (showPreparation)
+              FloatingActionButton(
+                heroTag: "speakBtn",
+                onPressed: () async {
+                  if (isSpeaking) {
+                    await flutterTts.stop();
+                    setState(() => isSpeaking = false);
+                  } else {
+                    final visibleText = _getVisibleText();
+                    if (visibleText.isNotEmpty) {
+                      setState(() => isSpeaking = true);
+                      await flutterTts.speak(visibleText);
+                      flutterTts.setCompletionHandler(() {
+                        setState(() => isSpeaking = false);
+                      });
+                    }
                   }
+                },
+                backgroundColor: isSpeaking ? Colors.grey : Colors.blue,
+                child: Icon(
+                  isSpeaking ? Icons.pause : Icons.volume_up,
+                  size: 24,
+                ),
+              ),
+
+            const SizedBox(width: 12), // space between buttons
+            // 🎤 Mic button (always visible)
+            FloatingActionButton(
+              heroTag: "micBtn",
+              onPressed: () {
+                if (isListening) {
+                  _speech.stop();
+                  setState(() => isListening = false);
+                } else {
+                  setState(() => showPreparation = false);
+                  startListening();
                 }
               },
-              backgroundColor: isSpeaking ? Colors.grey : Colors.blue,
-              child: Icon(isSpeaking ? Icons.pause : Icons.volume_up, size: 24),
+              backgroundColor: isListening ? Colors.red : Colors.green,
+              child: Icon(isListening ? Icons.mic : Icons.mic_off, size: 24),
             ),
-
-          const SizedBox(width: 12), // space between buttons
-          // 🎤 Mic button (always visible)
-          FloatingActionButton(
-            heroTag: "micBtn",
-            onPressed: () {
-              if (isListening) {
-                _speech.stop();
-                setState(() => isListening = false);
-              } else {
-                setState(() => showPreparation = false);
-                startListening();
-              }
-            },
-            backgroundColor: isListening ? Colors.red : Colors.green,
-            child: Icon(isListening ? Icons.mic : Icons.mic_off, size: 24),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
