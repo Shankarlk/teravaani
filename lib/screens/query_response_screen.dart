@@ -20,7 +20,6 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 import 'dart:async'; // Import for Timer
 import '../api/pageapi.dart';
-import 'package:url_launcher/url_launcher.dart';
 
 // --- API Configuration ---
 // IMPORTANT: For Android Emulator, use '10.0.2.2' to access 'localhost' on your host machine.
@@ -126,6 +125,7 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
   @override
   void initState() {
     super.initState();
+  WidgetsBinding.instance.addObserver(this);
     _checkInternetConnection();
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
       ConnectivityResult result,
@@ -472,8 +472,8 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
 
       _speech.listen(
         localeId: getSpeechLocale(_currentLangCode),
-        listenMode: stt.ListenMode.dictation,
-        listenFor: const Duration(seconds: 60),
+        listenMode: stt.ListenMode.deviceDefault,
+        // listenFor: const Duration(seconds: 60),
         pauseFor: const Duration(seconds: 5),
         partialResults: true,
         onResult: (result) async {
@@ -1567,17 +1567,13 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
   }
 
   void _handleConfirmationResponse(String recognizedWords) async {
-    print('English in _handleConfirmationResponse: ${_query}');
-    final recognized = recognizedWords.toLowerCase();
-    print(
-      "DEBUG: Confirmation recognized: $recognized $_presowingCropName and $_pendingCropName",
-    );
+    final recognizedNt = recognizedWords.toLowerCase();
+    final recognizedUp = await translateNativeToEnglish(recognizedNt);
+    final recognized = recognizedUp.toLowerCase();
     if (recognized.contains('yes') ||
         recognized.contains('yeah') ||
-        recognized.contains('sure') ||
-        recognized.contains('ಹೌದು') ||
-        recognized.contains('ಎಸ್')) {
-      print("DEBUG: User said YES.");
+        recognized.contains('sure')||
+        recognized.contains('s')) {
       _stopListening(); // Stop confirmation listening
       _processConfirmedQuery();
       _textController.clear(); // Clear text box immediately after processing
@@ -1585,10 +1581,7 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
     // Check for "No" variations including Kannada "ಇಲ್ಲ"
     else if (recognized.contains('no') ||
         recognized.contains('nope') ||
-        recognized.contains('nah') ||
-        recognized.contains('ಇಲ್ಲ') ||
-        recognized.contains('ನೋ')) {
-      print("DEBUG: User said NO.");
+        recognized.contains('nah') ) {
       _stopListening(); // Stop confirmation listening
       _cancelQuery();
       _textController.clear(); // Clear text box immediately after processing
@@ -1599,11 +1592,8 @@ class _QueryResponseScreenState extends State<QueryResponseScreen>
       _speakText(confirmationNative);
       // Reset the timer as user spoke, even if not 'Yes'/'No'
       _speechActivityTimer?.cancel();
-      _speechActivityTimer = Timer(const Duration(seconds: 15), () {
+      _speechActivityTimer = Timer(const Duration(seconds: 5), () {
         if (_isListening && _chatState == ChatState.awaitingConfirmation) {
-          print(
-            "DEBUG: No valid confirmation received within 15 seconds, re-asking.",
-          );
           _askForConfirmation(_lastRecognizedWords); // Re-ask for confirmation
         }
       });

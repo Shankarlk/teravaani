@@ -124,6 +124,15 @@ class _CropPreparationScreenState extends State<CropPreparationScreen>
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      // App is minimized / backgrounded
+        flutterTts.stop();
+        setState(() => isSpeaking = false);
+    }
+  }
 
   Future<void> _initTts() async {
     await flutterTts.setLanguage(widget.langCode);
@@ -188,6 +197,7 @@ class _CropPreparationScreenState extends State<CropPreparationScreen>
       setState(() => isListening = true);
       _speech.listen(
         localeId: getSpeechLocale(widget.langCode),
+        listenMode: stt.ListenMode.deviceDefault,
         onResult: (result) async {
           if (result.finalResult) {
             _speech.stop();

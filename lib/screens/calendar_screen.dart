@@ -39,7 +39,7 @@ class CalendarScreen extends StatefulWidget {
   _CalendarScreenState createState() => _CalendarScreenState();
 }
 
-class _CalendarScreenState extends State<CalendarScreen> {
+class _CalendarScreenState extends State<CalendarScreen> with WidgetsBindingObserver {
   final FlutterTts flutterTts = FlutterTts();
   late OnDeviceTranslator translator;
   final stt.SpeechToText _speech = stt.SpeechToText();
@@ -57,6 +57,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
   void initState() {
     super.initState();
     _checkInternetConnection();
+  WidgetsBinding.instance.addObserver(this);
     _connectivitySubscription = Connectivity().onConnectivityChanged.listen((
       ConnectivityResult result,
     ) {
@@ -144,6 +145,16 @@ class _CalendarScreenState extends State<CalendarScreen> {
     flutterTts.stop();
     super.dispose();
   }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      // App is minimized / backgrounded
+        flutterTts.stop();
+        setState(() => _isSpeaking = false);
+    }
+  }
 
   TranslateLanguage _getMLKitLanguage(String code) {
     switch (code) {
@@ -212,6 +223,7 @@ class _CalendarScreenState extends State<CalendarScreen> {
     if (available) {
       _speech.listen(
         localeId: getSpeechLocale(widget.targetLangCode),
+        listenMode: stt.ListenMode.deviceDefault,
         onResult: (result) async {
           if (result.finalResult) {
             _speech.stop();

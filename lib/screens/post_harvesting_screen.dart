@@ -23,7 +23,7 @@ class PostHarvestingScreen extends StatefulWidget {
   State<PostHarvestingScreen> createState() => _PostHarvestingScreenState();
 }
 
-class _PostHarvestingScreenState extends State<PostHarvestingScreen> {
+class _PostHarvestingScreenState extends State<PostHarvestingScreen> with WidgetsBindingObserver {
   final FlutterTts flutterTts = FlutterTts();
   final stt.SpeechToText _speech = stt.SpeechToText();
   bool isListening = false;
@@ -43,6 +43,7 @@ class _PostHarvestingScreenState extends State<PostHarvestingScreen> {
   void initState() {
     super.initState();
     _checkInternetConnection();
+  WidgetsBinding.instance.addObserver(this);
      _connectivitySubscription =
       Connectivity().onConnectivityChanged.listen((ConnectivityResult result) {
     bool hasInternet = result != ConnectivityResult.none;
@@ -110,6 +111,16 @@ void _showNoInternetDialog() async {
     _speech.cancel(); // Cancel any pending operations
     flutterTts.stop(); // Stop any ongoing speech
     super.dispose();
+  }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      // App is minimized / backgrounded
+        flutterTts.stop();
+        setState(() => isListening = false);
+    }
   }
 
   Future<void> speak(String text) async {
@@ -247,6 +258,7 @@ void _showNoInternetDialog() async {
       setState(() => isListening = true);
       _speech.listen(
         localeId: getSpeechLocale(widget.langCode),
+        listenMode: stt.ListenMode.deviceDefault,
         onResult: (result) async {
           if (result.finalResult) {
             _speech.stop();

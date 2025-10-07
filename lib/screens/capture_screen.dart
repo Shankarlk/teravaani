@@ -145,10 +145,14 @@ class _CaptureScreenState extends State<CaptureScreen>
     setState(() {}); // update UI after translation
   }
 
+ 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (state == AppLifecycleState.paused) {
-      _pause();
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      // App is minimized / backgrounded
+        flutterTts.stop();
+        setState(() => _isSpeaking = false);
     }
   }
 

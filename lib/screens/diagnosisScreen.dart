@@ -11,7 +11,6 @@ import 'package:google_mlkit_translation/google_mlkit_translation.dart';
 import './capture_screen.dart';
 import '../route_observer.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import 'no_internet_widget.dart';
 import 'dart:async';
 import '../api/pageapi.dart';
 
@@ -23,7 +22,7 @@ class DiagnosisScreen extends StatefulWidget {
   _DiagnosisScreenState createState() => _DiagnosisScreenState();
 }
 
-class _DiagnosisScreenState extends State<DiagnosisScreen> with RouteAware {
+class _DiagnosisScreenState extends State<DiagnosisScreen> with RouteAware,WidgetsBindingObserver {
   File? _image;
   String? _diagnosis;
   bool _isLoading = false;
@@ -203,6 +202,18 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> with RouteAware {
     flutterTts.stop();
     routeObserver.unsubscribe(this);
     super.dispose();
+  }
+  
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      // App is minimized / backgrounded
+      if (_isSpeaking) {
+        flutterTts.stop();
+        setState(() => _isSpeaking = false);
+      }
+    }
   }
 
   @override
@@ -418,6 +429,7 @@ class _DiagnosisScreenState extends State<DiagnosisScreen> with RouteAware {
   void initState() {
     super.initState();
     _checkInternetConnection();
+    WidgetsBinding.instance.addObserver(this);
     _loadHistory();
     targetLangCode = widget.widtargetLangCode;
     _initTranslations();

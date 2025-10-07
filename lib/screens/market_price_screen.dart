@@ -427,11 +427,14 @@ class _MarketPriceScreenState extends State<MarketPriceScreen>
     super.dispose();
   }
 
+  
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    print("AppLifecycleState: $state");
-    if (state == AppLifecycleState.detached) {
-      flutterTts.stop();
+    if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      // App is minimized / backgrounded
+        flutterTts.stop();
+        setState(() => _isSpeaking = false);
     }
   }
 

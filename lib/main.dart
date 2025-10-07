@@ -17,7 +17,6 @@ import './screens/WeatherScreen.dart';
 import './screens/CropManagementScreen.dart';
 import 'route_observer.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
-import './screens/no_internet_widget.dart';
 import './api/pageapi.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:uuid/uuid.dart';
@@ -83,6 +82,7 @@ class _VoiceHomePageState extends State<VoiceHomePage>
   void initState() {
     super.initState();
     _speech = stt.SpeechToText();
+  WidgetsBinding.instance.addObserver(this);
     _requestPermissions().then((_) async {
       _speechAvailable = await _speech.initialize(
         onStatus: (status) {
@@ -173,10 +173,8 @@ class _VoiceHomePageState extends State<VoiceHomePage>
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive) {
       // App is minimized / backgrounded
-      if (_isSpeaking) {
         _flutterTts.stop();
         setState(() => _isSpeaking = false);
-      }
     }
   }
 
